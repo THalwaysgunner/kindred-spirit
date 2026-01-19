@@ -655,7 +655,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center justify-center md:justify-start gap-2">
               {profile.name || 'Your Name'}
               {profile.isVerified && (
-                <BadgeCheck className="w-6 h-6 text-blue-500 fill-blue-500/10" title="LinkedIn Verified" />
+                <BadgeCheck className="w-6 h-6 text-blue-500 fill-blue-500/10" aria-label="LinkedIn Verified" />
               )}
             </h1>
             <p className="text-brand-600 dark:text-brand-400 font-medium">

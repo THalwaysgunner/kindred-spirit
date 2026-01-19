@@ -213,7 +213,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                                  <div>
                                     <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-3">What they do</h4>
                                     <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
-                                       {selectedApp.requirements.descriptionSummary || "No summary provided for this role."}
+                                       {selectedApp.requirements.description || "No summary provided for this role."}
                                     </p>
                                  </div>
                                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
