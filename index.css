@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-vexo-bg: #0F111A;
+  --color-vexo-card: #1E202E;
+  --color-vexo-sidebar: #5D5FEF;
+  --color-vexo-sidebar-light: #7B7DFC;
+  --color-vexo-accent: #FACD68;
+  --color-vexo-success: #00E096;
+  --color-vexo-danger: #FF3D71;
+  --color-vexo-input: #2C2E3E;
+  --color-vexo-text: #A0AEC0;
+
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+}
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}

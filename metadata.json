@@ -1,0 +1,7 @@
+{
+  "name": "HireChance",
+  "description": "AI-powered CRM for job seekers. Tailor your resume to specific job descriptions instantly to increase your hiring chances.",
+  "requestFramePermissions": [
+    "display-capture"
+  ]
+}
