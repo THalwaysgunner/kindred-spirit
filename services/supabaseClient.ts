@@ -1,14 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from "@supabase/supabase-js";
 
-const getEnv = (name: string) => {
-    return (import.meta as any).env?.[name] || '';
-};
-
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+// Lovable Cloud injects these at build time
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey =
+  (import.meta.env as any).VITE_SUPABASE_PUBLISHABLE_KEY ||
+  (import.meta.env as any).VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase credentials missing. Please check your .env file.');
+  console.warn("Backend credentials missing. Please check environment variables.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
