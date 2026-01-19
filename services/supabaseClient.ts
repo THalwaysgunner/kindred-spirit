@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+// Legacy client used across the app.
+// We route it through the auto-generated Lovable Cloud client (keys/session handling).
+// The generated DB types are currently empty, so we cast to `any` to avoid `never` table errors.
+import { supabase as typedSupabase } from "../src/integrations/supabase/client";
 
-// Lovable Cloud injects these at build time
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey =
-  (import.meta.env as any).VITE_SUPABASE_PUBLISHABLE_KEY ||
-  (import.meta.env as any).VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("Backend credentials missing. Please check environment variables.");
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = typedSupabase as any;
