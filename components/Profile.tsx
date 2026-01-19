@@ -159,17 +159,37 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
     if (!session) return;
     setSaving('skills');
     try {
-      const skillNames = tempSkills.map(s => s.name);
+      // Get existing skills from DB
+      const { data: existingSkills } = await supabase
+        .from('skills')
+        .select('id, name')
+        .eq('profile_id', session.user.id);
 
-      // Skills are stored as text[] array on profiles table
-      const { error } = await supabase
-        .from('profiles')
-        .update({ skills: skillNames })
-        .eq('id', session.user.id);
+      const existingNames = new Set((existingSkills || []).map(s => s.name));
+      const newNames = new Set(tempSkills.map(s => s.name));
 
-      if (error) throw error;
+      // Delete skills that were removed
+      const toDelete = (existingSkills || []).filter(s => !newNames.has(s.name));
+      for (const skill of toDelete) {
+        await supabase.from('skills').delete().eq('id', skill.id);
+      }
 
-      const newProfile = { ...profile, skills: tempSkills };
+      // Insert new skills
+      const toInsert = tempSkills.filter(s => !existingNames.has(s.name));
+      for (const skill of toInsert) {
+        await supabase.from('skills').insert({
+          profile_id: session.user.id,
+          name: skill.name
+        });
+      }
+
+      // Refetch skills to get IDs
+      const { data: updatedSkills } = await supabase
+        .from('skills')
+        .select('id, name')
+        .eq('profile_id', session.user.id);
+
+      const newProfile = { ...profile, skills: (updatedSkills || []).map(s => ({ id: s.id, name: s.name })) };
       onChange(newProfile);
       setLastSavedProfile(newProfile);
       setEditingSkills(false);
@@ -402,9 +422,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
       // Normalize profile before saving
       const normalizedProfile = normalizeProfile(profile);
       
-      // 1. Save Basic Profile Info (skills stored as text[] on profiles table)
-      const skillNames = normalizedProfile.skills.map(s => s.name);
-      
+      // 1. Save Basic Profile Info
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: session.user.id,
         full_name: normalizedProfile.name,
@@ -413,11 +431,34 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
         summary: normalizedProfile.summary,
         email: normalizedProfile.email,
         phone: normalizedProfile.phone,
-        profile_picture_url: normalizedProfile.profilePictureUrl,
-        skills: skillNames
+        profile_picture_url: normalizedProfile.profilePictureUrl
       });
 
       if (profileError) throw profileError;
+
+      // 2. Sync Skills to skills table
+      const { data: existingSkills } = await supabase
+        .from('skills')
+        .select('id, name')
+        .eq('profile_id', session.user.id);
+
+      const existingNames = new Set((existingSkills || []).map(s => s.name));
+      const newNames = new Set(normalizedProfile.skills.map(s => s.name));
+
+      // Delete removed skills
+      const toDelete = (existingSkills || []).filter(s => !newNames.has(s.name));
+      for (const skill of toDelete) {
+        await supabase.from('skills').delete().eq('id', skill.id);
+      }
+
+      // Insert new skills
+      const toInsert = normalizedProfile.skills.filter(s => !existingNames.has(s.name));
+      for (const skill of toInsert) {
+        await supabase.from('skills').insert({
+          profile_id: session.user.id,
+          name: skill.name
+        });
+      }
 
       // 2. Upsert Experience with proper logo handling
       for (const exp of normalizedProfile.experience) {

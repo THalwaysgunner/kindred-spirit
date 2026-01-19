@@ -124,8 +124,13 @@ export default function App() {
 
       if (expError) throw expError;
 
-      // Skills are stored as an array column on the profiles table
-      // No separate skills table query needed - skills come from profileData.skills
+      // 4. Fetch Skills from skills table
+      const { data: skillsData, error: skillsError } = await supabase
+        .from('skills')
+        .select('*')
+        .eq('profile_id', userId);
+
+      if (skillsError) throw skillsError;
 
       // 5. Fetch Applications
       const { data: appsData, error: appsError } = await supabase
@@ -147,7 +152,7 @@ export default function App() {
           linkedinUrl: profileData?.linkedin_url || '',
           summary: profileData?.summary || '',
           profilePictureUrl: profileData?.profile_picture_url || '',
-          skills: profileData?.skills ? profileData.skills.map((name: string) => ({ name })) : [],
+          skills: skillsData ? skillsData.map((s: any) => ({ id: s.id, name: s.name })) : [],
           education: eduData ? eduData.map((e: any) => ({
             id: e.id,
             institution: e.institution,
