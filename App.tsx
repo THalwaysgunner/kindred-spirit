@@ -371,7 +371,21 @@ export default function App() {
           status: updatedApp.status,
           notes: updatedApp.notes,
           match_score: updatedApp.matchScore,
-          tailored_resume: updatedApp.tailoredResume
+          tailored_resume: updatedApp.tailoredResume,
+          // Expanded fields for full CRUD support
+          job_title: updatedApp.requirements?.title,
+          company: updatedApp.requirements?.company,
+          description: updatedApp.description ? JSON.stringify(updatedApp.description) : undefined,
+          about_the_role: updatedApp.about_the_role ? JSON.stringify(updatedApp.about_the_role) : undefined,
+          responsibilities: updatedApp.responsibilities ? JSON.stringify(updatedApp.responsibilities) : undefined,
+          requirements: updatedApp.structured_requirements ? JSON.stringify(updatedApp.structured_requirements) : undefined,
+          nice_to_have: updatedApp.nice_to_have ? JSON.stringify(updatedApp.nice_to_have) : undefined,
+          location: updatedApp.location || updatedApp.requirements?.location,
+          employment_status: updatedApp.employmentStatus || updatedApp.requirements?.employmentStatus,
+          experience_level: updatedApp.experienceLevel || updatedApp.requirements?.experienceLevel,
+          job_url: updatedApp.jobUrl,
+          industries: updatedApp.industries || updatedApp.requirements?.industries,
+          logo_url: updatedApp.logo_url || updatedApp.requirements?.logoUrl
         })
         .eq('id', updatedApp.id);
 
@@ -381,6 +395,34 @@ export default function App() {
       setApplications(newApps);
     } catch (error) {
       console.error('Error updating application:', error);
+    }
+  };
+
+  const handleDeleteApplication = async (appId: string) => {
+    if (!session) return;
+
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', appId);
+
+      if (error) throw error;
+
+      setApplications(applications.filter(app => app.id !== appId));
+      if (selectedApp?.id === appId) {
+        setSelectedApp(null);
+        setView('applications-list');
+      }
+    } catch (error) {
+      console.error('Error deleting application:', error);
+    }
+  };
+
+  // Refetch user data (used by Profile after save)
+  const handleRefetchUserData = async () => {
+    if (session?.user?.id) {
+      await fetchUserData(session.user.id, true);
     }
   };
 
@@ -753,6 +795,7 @@ export default function App() {
                   profile={profile}
                   onChange={setProfile}
                   session={session}
+                  onRefetch={handleRefetchUserData}
                 />
               )}
               {view === 'applications-list' && (

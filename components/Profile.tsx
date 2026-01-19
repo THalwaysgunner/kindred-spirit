@@ -5,6 +5,8 @@ import { ApifyService } from '../services/apifyService';
 import { GeminiService } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
+import { toast } from 'sonner';
+import { mapLinkedInToProfile, normalizeProfile } from '../utils/linkedinMapper';
 import {
   User,
   Briefcase,
@@ -29,6 +31,7 @@ interface ProfileProps {
   profile: UserProfile;
   onChange: (p: UserProfile) => void;
   session: Session | null;
+  onRefetch?: () => Promise<void>;
 }
 
 // Helper Component for Collapsible Text
@@ -69,10 +72,11 @@ const CollapsibleText = ({ text, lines = 2 }: { text: string, lines?: number }) 
   );
 };
 
-export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) => {
+export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, onRefetch }) => {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   // Consolidating LinkedIn URL state into the profile object directly
   const [activeTab, setActiveTab] = useState<'import' | 'linkedin'>('import');
 
@@ -169,8 +173,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       onChange(newProfile);
       setLastSavedProfile(newProfile);
       setEditingSkills(false);
-    } catch (err) {
+      toast.success('Skills saved successfully');
+    } catch (err: any) {
       console.error('Error saving skills:', err);
+      toast.error(err.message || 'Failed to save skills');
     } finally {
       setSaving(null);
     }
@@ -234,8 +240,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       onChange(newProfile);
       setLastSavedProfile(newProfile);
       setEditingPersonalDetails(false);
+      toast.success('Personal details saved');
     } catch (err: any) {
       console.error('Error saving personal details:', err);
+      toast.error(err.message || 'Failed to save personal details');
     } finally {
       setSaving(null);
     }
@@ -264,20 +272,19 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       setSaving('profile-image');
       try {
         const fileExt = file.name.split('.').pop();
-        const fileName = `${session.user.id}-${Math.random()}.${fileExt}`;
-        const filePath = `${fileName}`;
+        const fileName = `${session.user.id}/${Date.now()}.${fileExt}`;
 
         // 1. Upload to Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from('profile-pictures')
-          .upload(filePath, file);
+          .upload(fileName, file, { upsert: true });
 
         if (uploadError) throw uploadError;
 
         // 2. Get Public URL
         const { data: { publicUrl } } = supabase.storage
           .from('profile-pictures')
-          .getPublicUrl(filePath);
+          .getPublicUrl(fileName);
 
         // 3. Update Profile Table immediately
         const { error: updateError } = await supabase
@@ -289,8 +296,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
 
         // 4. Update local state
         onChange({ ...profile, profilePictureUrl: publicUrl });
-      } catch (err) {
+        toast.success('Profile picture updated');
+      } catch (err: any) {
         console.error('Error uploading profile picture:', err);
+        toast.error(err.message || 'Failed to upload profile picture');
       } finally {
         setSaving(null);
       }
@@ -303,7 +312,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
     if (!file) return;
 
     setLoading(true);
-    setLoadingMessage('Parsing...');
+    setLoadingMessage('Parsing resume...');
     setSaving('import');
 
     try {
@@ -313,19 +322,19 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         try {
           const parsedProfile = await GeminiService.parseResumeFile(base64, file.type);
 
-          // Re-map skills from string[] to {name: string}[]
-          const mappedSkills = (parsedProfile.skills || []).map((s: any) => ({
-            name: typeof s === 'string' ? s : s.name
-          }));
-
-          onChange({
+          // Normalize the parsed profile to ensure consistent field names
+          const normalized = normalizeProfile({
             ...profile,
             ...parsedProfile,
-            skills: mappedSkills,
             profilePictureUrl: parsedProfile.profilePictureUrl || profile.profilePictureUrl
           });
-        } catch (err) {
+
+          onChange(normalized);
+          setHasUnsavedChanges(true);
+          toast.success('Resume imported! Click "Save Changes" to persist.');
+        } catch (err: any) {
           console.error(err);
+          toast.error(err.message || 'Failed to parse resume');
         } finally {
           setLoading(false);
           setSaving(null);
@@ -335,38 +344,48 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
     } catch (err) {
       setLoading(false);
       setSaving(null);
+      toast.error('Failed to read file');
     }
   };
 
   const handleLinkedinImport = async () => {
     if (!profile.linkedinUrl || !session) return;
     setLoading(true);
-    setLoadingMessage('Importing...');
+    setLoadingMessage('Fetching LinkedIn data...');
     setSaving('import');
 
     try {
       const rawData = await ApifyService.fetchLinkedInProfile(profile.linkedinUrl);
       if (!rawData) throw new Error("Could not fetch LinkedIn data");
 
-      setLoadingMessage('Normalizing...');
-      const mappedProfile = await GeminiService.mapProfileData(rawData, 'LinkedIn');
-      const mappedSkills = (mappedProfile.skills || []).map((s: any) => ({
-        name: typeof s === 'string' ? s : s.name
-      }));
+      setLoadingMessage('Processing profile...');
+      
+      // Use deterministic mapper first for structural data (logos, years, etc.)
+      const deterministicProfile = mapLinkedInToProfile(rawData, profile);
+      
+      // Then use AI for text normalization only (summary polish, etc.)
+      let aiEnhancedProfile = deterministicProfile;
+      try {
+        const aiMapped = await GeminiService.mapProfileData(rawData, 'LinkedIn');
+        // Only use AI for summary and text fields, keep structural data from deterministic mapper
+        aiEnhancedProfile = {
+          ...deterministicProfile,
+          summary: aiMapped.summary || deterministicProfile.summary,
+          currentRole: aiMapped.currentRole || deterministicProfile.currentRole
+        };
+      } catch (aiErr) {
+        console.warn('AI mapping failed, using deterministic mapping only:', aiErr);
+      }
 
-      const newProfile = {
-        ...profile,
-        ...mappedProfile,
-        skills: mappedSkills,
-        isVerified: true,
-        profilePictureUrl: mappedProfile.profilePictureUrl || profile.profilePictureUrl
-      };
+      // Normalize to ensure all fields are properly shaped
+      const finalProfile = normalizeProfile(aiEnhancedProfile);
 
-
-      // Handle Email Lock during LinkedIn import (Removed overwrite)
-      onChange(newProfile);
+      onChange(finalProfile);
+      setHasUnsavedChanges(true);
+      toast.success('LinkedIn profile imported! Click "Save Changes" to persist.');
     } catch (err: any) {
       console.error('LinkedIn Import Error:', err);
+      toast.error(err.message || 'Failed to import LinkedIn profile');
     } finally {
       setLoading(false);
       setSaving(null);
@@ -377,28 +396,31 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
     if (!session) return;
 
     setSaving('all');
+    const loadingToast = toast.loading('Saving profile...');
 
     try {
-      // 1. Save Basic Profile Info
+      // Normalize profile before saving
+      const normalizedProfile = normalizeProfile(profile);
+      
       // 1. Save Basic Profile Info (skills stored as text[] on profiles table)
-      const skillNames = profile.skills.map(s => s.name);
+      const skillNames = normalizedProfile.skills.map(s => s.name);
       
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: session.user.id,
-        full_name: profile.name,
-        headline_role: profile.currentRole,
-        linkedin_url: profile.linkedinUrl,
-        summary: profile.summary,
-        email: profile.email,
-        phone: profile.phone,
-        profile_picture_url: profile.profilePictureUrl,
+        full_name: normalizedProfile.name,
+        headline_role: normalizedProfile.currentRole,
+        linkedin_url: normalizedProfile.linkedinUrl,
+        summary: normalizedProfile.summary,
+        email: normalizedProfile.email,
+        phone: normalizedProfile.phone,
+        profile_picture_url: normalizedProfile.profilePictureUrl,
         skills: skillNames
       });
 
       if (profileError) throw profileError;
 
-      // 2. Upsert Experience
-      for (const exp of profile.experience) {
+      // 2. Upsert Experience with proper logo handling
+      for (const exp of normalizedProfile.experience) {
         const payload = {
           profile_id: session.user.id,
           company: exp.company || 'Unknown Company',
@@ -418,12 +440,12 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         }
       }
 
-      // 3. Upsert Education
-      for (const edu of profile.education) {
+      // 3. Upsert Education with proper logo and year handling
+      for (const edu of normalizedProfile.education) {
         const payload = {
           profile_id: session.user.id,
           institution: edu.institution || 'Unknown Institution',
-          degree: edu.degree || 'Degree',
+          degree: edu.degree || '',
           field_of_study: edu.fieldOfStudy || '',
           year: edu.year || '',
           logo_url: edu.logo || ''
@@ -437,11 +459,22 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         }
       }
 
-      // Update local state with refreshed data
-      onChange({ ...profile });
-      setLastSavedProfile(profile);
+      toast.dismiss(loadingToast);
+      toast.success('Profile saved successfully!');
+      
+      // Refetch from database to ensure UI matches DB state
+      if (onRefetch) {
+        await onRefetch();
+      } else {
+        onChange(normalizedProfile);
+        setLastSavedProfile(normalizedProfile);
+      }
+      
+      setHasUnsavedChanges(false);
     } catch (err: any) {
+      toast.dismiss(loadingToast);
       console.error('Save Error:', err);
+      toast.error(err.message || 'Failed to save profile');
     } finally {
       setSaving(null);
     }
@@ -463,8 +496,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       onChange(newProfile);
       setLastSavedProfile(newProfile);
       setEditingSummary(false);
+      toast.success('Summary saved');
     } catch (err: any) {
       console.error('Error saving summary:', err);
+      toast.error(err.message || 'Failed to save summary');
     } finally {
       setSaving(null);
     }
@@ -525,8 +560,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       setLastSavedProfile(newProfile);
       setEditingExpIndex(null);
       setTempExp(null);
+      toast.success('Experience saved');
     } catch (err: any) {
       console.error('Error saving experience:', err);
+      toast.error(err.message || 'Failed to save experience');
     } finally {
       setSaving(null);
     }
@@ -584,7 +621,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
           id: isUuid(tempEdu.id) ? tempEdu.id : undefined,
           profile_id: session.user.id,
           institution: tempEdu.institution || 'Unknown Institution',
-          degree: tempEdu.degree || 'Degree',
+          degree: tempEdu.degree || '',
           field_of_study: tempEdu.fieldOfStudy || '',
           year: tempEdu.year || '',
           logo_url: tempEdu.logo || ''
@@ -601,8 +638,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       setLastSavedProfile(newProfile);
       setEditingEduIndex(null);
       setTempEdu(null);
+      toast.success('Education saved');
     } catch (err: any) {
       console.error('Error saving education:', err);
+      toast.error(err.message || 'Failed to save education');
     } finally {
       setSaving(null);
     }
@@ -665,15 +704,20 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
           </div>
         </div>
 
-        {JSON.stringify(profile) !== JSON.stringify(lastSavedProfile) && (
-          <button
-            onClick={handleSaveProfile}
-            disabled={saving === 'all'}
-            className="px-4 py-2 bg-brand-600 text-white rounded-lg flex items-center gap-2 hover:bg-brand-700 shadow-sm transition-all disabled:opacity-50 animate-in fade-in slide-in-from-top-2"
-          >
-            {saving === 'all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Changes
-          </button>
+        {(hasUnsavedChanges || JSON.stringify(profile) !== JSON.stringify(lastSavedProfile)) && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded-full font-medium">
+              Unsaved changes
+            </span>
+            <button
+              onClick={handleSaveProfile}
+              disabled={saving === 'all'}
+              className="px-4 py-2 bg-brand-600 text-white rounded-lg flex items-center gap-2 hover:bg-brand-700 shadow-sm transition-all disabled:opacity-50 animate-in fade-in slide-in-from-top-2"
+            >
+              {saving === 'all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save Changes
+            </button>
+          </div>
         )}
       </div>
 
