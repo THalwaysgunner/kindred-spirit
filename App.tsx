@@ -747,7 +747,7 @@ export default function App() {
         <div className={`flex-1 overflow-hidden flex flex-row transition-colors relative ${view === 'create' ? 'bg-white' : 'bg-slate-50/50'} dark:bg-[#0F111A]`}>
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'} ${isChatOpen && view === 'interview-prep' ? 'mr-[384px]' : ''}`}>
-              {view === 'dashboard' && <Dashboard onNavigate={(v) => setView(v)} applications={applications} profile={profile} />}
+              {view === 'dashboard' && <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />}
               {view === 'create' && (
                 <Wizard
                   onComplete={handleCreateApplication}
@@ -787,7 +787,7 @@ export default function App() {
                   <CVPreview application={selectedApp} profile={profile} onClose={() => setView('applications-list')} />
                 </div>
               )}
-              {view === 'search' && <JobSearch onAnalyze={handleAnalyzeJob} />}
+              {view === 'search' && <JobSearch onAnalyzeJob={handleAnalyzeJob} />}
               {view === 'company-research' && <GetReady applications={applications} />}
               {view === 'interview-prep' && <InterviewPrep applications={applications} selectedId={selectedStudyAppId} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} />}
             </div>

@@ -503,7 +503,8 @@ ${formatStructuredDescription(structuredDescription || {
         about_the_role: [],
         responsibilities: [],
         requirements: [],
-        nice_to_have: []
+        nice_to_have: [],
+        benefits: []
       })}
 
 HQ: ${editedRequirements.headquarters?.line1 || ''}, ${editedRequirements.headquarters?.city || ''}, ${editedRequirements.headquarters?.country || ''}
