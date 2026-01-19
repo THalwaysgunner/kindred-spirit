@@ -14,7 +14,222 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      applications: {
+        Row: {
+          about_the_role: string | null
+          company: string
+          created_at: string
+          description: string | null
+          employment_status: string | null
+          experience_level: string | null
+          hq_address: string | null
+          id: string
+          industries: string[] | null
+          job_details: Json
+          job_resume: string | null
+          job_title: string
+          job_url: string | null
+          location: string | null
+          logo_url: string | null
+          match_score: number | null
+          nice_to_have: string | null
+          notes: string | null
+          posted_on: string | null
+          profile_id: string
+          requirements: string | null
+          responsibilities: string | null
+          status: string | null
+          tailored_resume: Json
+        }
+        Insert: {
+          about_the_role?: string | null
+          company: string
+          created_at?: string
+          description?: string | null
+          employment_status?: string | null
+          experience_level?: string | null
+          hq_address?: string | null
+          id?: string
+          industries?: string[] | null
+          job_details?: Json
+          job_resume?: string | null
+          job_title: string
+          job_url?: string | null
+          location?: string | null
+          logo_url?: string | null
+          match_score?: number | null
+          nice_to_have?: string | null
+          notes?: string | null
+          posted_on?: string | null
+          profile_id: string
+          requirements?: string | null
+          responsibilities?: string | null
+          status?: string | null
+          tailored_resume?: Json
+        }
+        Update: {
+          about_the_role?: string | null
+          company?: string
+          created_at?: string
+          description?: string | null
+          employment_status?: string | null
+          experience_level?: string | null
+          hq_address?: string | null
+          id?: string
+          industries?: string[] | null
+          job_details?: Json
+          job_resume?: string | null
+          job_title?: string
+          job_url?: string | null
+          location?: string | null
+          logo_url?: string | null
+          match_score?: number | null
+          nice_to_have?: string | null
+          notes?: string | null
+          posted_on?: string | null
+          profile_id?: string
+          requirements?: string | null
+          responsibilities?: string | null
+          status?: string | null
+          tailored_resume?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      education: {
+        Row: {
+          created_at: string
+          degree: string | null
+          field_of_study: string | null
+          id: string
+          institution: string
+          logo_url: string | null
+          profile_id: string
+          year: string | null
+        }
+        Insert: {
+          created_at?: string
+          degree?: string | null
+          field_of_study?: string | null
+          id?: string
+          institution: string
+          logo_url?: string | null
+          profile_id: string
+          year?: string | null
+        }
+        Update: {
+          created_at?: string
+          degree?: string | null
+          field_of_study?: string | null
+          id?: string
+          institution?: string
+          logo_url?: string | null
+          profile_id?: string
+          year?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "education_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      experience: {
+        Row: {
+          company: string
+          created_at: string
+          dates: string | null
+          description: string | null
+          duration: string | null
+          id: string
+          location: string | null
+          logo_url: string | null
+          profile_id: string
+          role: string
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          dates?: string | null
+          description?: string | null
+          duration?: string | null
+          id?: string
+          location?: string | null
+          logo_url?: string | null
+          profile_id: string
+          role: string
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          dates?: string | null
+          description?: string | null
+          duration?: string | null
+          id?: string
+          location?: string | null
+          logo_url?: string | null
+          profile_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          email: string | null
+          full_name: string | null
+          headline_role: string | null
+          id: string
+          linkedin_url: string | null
+          phone: string | null
+          profile_picture_url: string | null
+          skills: string[] | null
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          email?: string | null
+          full_name?: string | null
+          headline_role?: string | null
+          id: string
+          linkedin_url?: string | null
+          phone?: string | null
+          profile_picture_url?: string | null
+          skills?: string[] | null
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          email?: string | null
+          full_name?: string | null
+          headline_role?: string | null
+          id?: string
+          linkedin_url?: string | null
+          phone?: string | null
+          profile_picture_url?: string | null
+          skills?: string[] | null
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
