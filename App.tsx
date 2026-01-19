@@ -125,14 +125,8 @@ export default function App() {
 
       if (expError) throw expError;
 
-      // 4. Fetch Skills (Now from a single row with a 'names' array)
-      const { data: skillsData, error: skillsError } = await supabase
-        .from('skills')
-        .select('names')
-        .eq('profile_id', userId)
-        .maybeSingle(); // Better than .single() here as it doesn't throw if 0 rows
-
-      if (skillsError) throw skillsError;
+      // Skills are stored as an array column on the profiles table
+      // No separate skills table query needed - skills come from profileData.skills
 
       // 5. Fetch Applications
       const { data: appsData, error: appsError } = await supabase
@@ -156,7 +150,7 @@ export default function App() {
           useRegisteredEmail: profileData?.use_registered_email || false,
           isVerified: profileData?.is_linkedin_verified || false,
           profilePictureUrl: profileData?.profile_picture_url || '',
-          skills: skillsData?.names ? skillsData.names.map((name: string) => ({ name })) : [],
+          skills: profileData?.skills ? profileData.skills.map((name: string) => ({ name })) : [],
           education: eduData ? eduData.map((e: any) => ({
             id: e.id,
             institution: e.institution,

@@ -1,1 +1,10 @@
 project_id = "kjwalgbtrydcihdkarye"
+
+[functions.apify]
+verify_jwt = false
+
+[functions.glassdoor]
+verify_jwt = false
+
+[functions.ai]
+verify_jwt = false
