@@ -200,7 +200,6 @@ export type Database = {
           linkedin_url: string | null
           phone: string | null
           profile_picture_url: string | null
-          skills: string[] | null
           summary: string | null
           updated_at: string
         }
@@ -212,7 +211,6 @@ export type Database = {
           linkedin_url?: string | null
           phone?: string | null
           profile_picture_url?: string | null
-          skills?: string[] | null
           summary?: string | null
           updated_at?: string
         }
@@ -224,11 +222,39 @@ export type Database = {
           linkedin_url?: string | null
           phone?: string | null
           profile_picture_url?: string | null
-          skills?: string[] | null
           summary?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      skills: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skills_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
