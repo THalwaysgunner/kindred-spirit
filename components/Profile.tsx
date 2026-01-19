@@ -93,8 +93,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
     name: profile.name,
     currentRole: profile.currentRole,
     email: profile.email,
-    phone: profile.phone,
-    useRegisteredEmail: profile.useRegisteredEmail
+    phone: profile.phone
   });
 
   // Skills Edit State
@@ -158,12 +157,11 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
     try {
       const skillNames = tempSkills.map(s => s.name);
 
+      // Skills are stored as text[] array on profiles table
       const { error } = await supabase
-        .from('skills')
-        .upsert({
-          profile_id: session.user.id,
-          names: skillNames
-        }, { onConflict: 'profile_id' });
+        .from('profiles')
+        .update({ skills: skillNames })
+        .eq('id', session.user.id);
 
       if (error) throw error;
 
@@ -222,8 +220,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         headline_role: tempPersonal.currentRole,
         email: tempPersonal.email,
         phone: tempPersonal.phone,
-        profile_picture_url: profile.profilePictureUrl,
-        use_registered_email: tempPersonal.useRegisteredEmail
+        profile_picture_url: profile.profilePictureUrl
       });
       if (error) throw error;
 
@@ -232,8 +229,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         name: tempPersonal.name,
         currentRole: tempPersonal.currentRole,
         email: tempPersonal.email,
-        phone: tempPersonal.phone,
-        useRegisteredEmail: tempPersonal.useRegisteredEmail
+        phone: tempPersonal.phone
       };
       onChange(newProfile);
       setLastSavedProfile(newProfile);
@@ -250,8 +246,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
       name: profile.name,
       currentRole: profile.currentRole,
       email: profile.email,
-      phone: profile.phone,
-      useRegisteredEmail: profile.useRegisteredEmail
+      phone: profile.phone
     });
     setEditingPersonalDetails(true);
   };
@@ -385,6 +380,9 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
 
     try {
       // 1. Save Basic Profile Info
+      // 1. Save Basic Profile Info (skills stored as text[] on profiles table)
+      const skillNames = profile.skills.map(s => s.name);
+      
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: session.user.id,
         full_name: profile.name,
@@ -394,51 +392,53 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
         email: profile.email,
         phone: profile.phone,
         profile_picture_url: profile.profilePictureUrl,
-        use_registered_email: profile.useRegisteredEmail,
-        is_linkedin_verified: profile.isVerified || false
+        skills: skillNames
       });
 
       if (profileError) throw profileError;
 
       // 2. Upsert Experience
-      const experienceToUpsert = profile.experience.map(exp => ({
-        id: isUuid(exp.id) ? exp.id : undefined,
-        profile_id: session.user.id,
-        company: exp.company || 'Unknown Company',
-        role: exp.role || 'Professional',
-        dates: exp.dates || '',
-        duration: exp.duration || '',
-        location: exp.location || '',
-        description: exp.description || '',
-        logo_url: exp.logo || ''
-      }));
-      if (experienceToUpsert.length > 0) await supabase.from('experience').upsert(experienceToUpsert);
+      for (const exp of profile.experience) {
+        const payload = {
+          profile_id: session.user.id,
+          company: exp.company || 'Unknown Company',
+          role: exp.role || 'Professional',
+          dates: exp.dates || '',
+          duration: exp.duration || '',
+          location: exp.location || '',
+          description: exp.description || '',
+          logo_url: exp.logo || ''
+        };
+        
+        if (isUuid(exp.id)) {
+          await supabase.from('experience').update(payload).eq('id', exp.id);
+        } else {
+          const { data } = await supabase.from('experience').insert(payload).select().single();
+          if (data) exp.id = data.id;
+        }
+      }
 
       // 3. Upsert Education
-      const educationToUpsert = profile.education.map(edu => ({
-        id: isUuid(edu.id) ? edu.id : undefined,
-        profile_id: session.user.id,
-        institution: edu.institution || 'Unknown Institution',
-        degree: edu.degree || 'Degree',
-        field_of_study: edu.fieldOfStudy || '',
-        year: edu.year || '',
-        logo_url: edu.logo || ''
-      }));
-      if (educationToUpsert.length > 0) await supabase.from('education').upsert(educationToUpsert);
-
-      // 4. Upsert Skills
-      const skillsToUpsert = profile.skills.map(s => ({
-        id: isUuid(s.id) ? s.id : undefined,
-        profile_id: session.user.id,
-        name: s.name
-      }));
-      if (skillsToUpsert.length > 0) await supabase.from('skills').upsert(skillsToUpsert);
-
-      // Final Hydration back to state (refresh IDs)
-      const { data: newSkills } = await supabase.from('skills').select('*').eq('profile_id', session.user.id);
-      if (newSkills) {
-        onChange({ ...profile, skills: newSkills.map(s => ({ id: s.id, name: s.name })) });
+      for (const edu of profile.education) {
+        const payload = {
+          profile_id: session.user.id,
+          institution: edu.institution || 'Unknown Institution',
+          degree: edu.degree || 'Degree',
+          field_of_study: edu.fieldOfStudy || '',
+          year: edu.year || '',
+          logo_url: edu.logo || ''
+        };
+        
+        if (isUuid(edu.id)) {
+          await supabase.from('education').update(payload).eq('id', edu.id);
+        } else {
+          const { data } = await supabase.from('education').insert(payload).select().single();
+          if (data) edu.id = data.id;
+        }
       }
+
+      // Update local state with refreshed data
+      onChange({ ...profile });
       setLastSavedProfile(profile);
     } catch (err: any) {
       console.error('Save Error:', err);
@@ -852,20 +852,10 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
                   <input
                     type="email"
-                    value={tempPersonal.useRegisteredEmail ? (session?.user?.email || tempPersonal.email) : tempPersonal.email}
-                    disabled={tempPersonal.useRegisteredEmail}
+                    value={tempPersonal.email}
                     onChange={(e) => setTempPersonal({ ...tempPersonal, email: e.target.value })}
-                    className={`w-full text-sm p-2 border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none dark:text-white ${tempPersonal.useRegisteredEmail ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className="w-full text-sm p-2 border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none dark:text-white"
                   />
-                  <label className="flex items-center gap-2 mt-2 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={tempPersonal.useRegisteredEmail}
-                      onChange={(e) => setTempPersonal({ ...tempPersonal, useRegisteredEmail: e.target.checked })}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    />
-                    <span className="text-xs text-slate-500 group-hover:text-slate-700 transition-colors">Use registered email</span>
-                  </label>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
@@ -902,10 +892,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session }) 
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">Email Address</span>
-                <p className="text-sm font-medium text-slate-900 dark:text-white">
-                  {profile.useRegisteredEmail ? (session?.user?.email || profile.email) : profile.email}
-                  {profile.useRegisteredEmail && <span className="ml-2 text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 uppercase tracking-tighter font-bold">Verified</span>}
-                </p>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">{profile.email || 'Not specified'}</p>
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">Phone Number</span>

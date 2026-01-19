@@ -48,7 +48,6 @@ const EMPTY_PROFILE: UserProfile = {
   currentRole: "",
   linkedinUrl: "",
   summary: '',
-  useRegisteredEmail: false,
   skills: [],
   profilePictureUrl: '',
   education: [],
@@ -147,8 +146,6 @@ export default function App() {
           currentRole: profileData?.headline_role || '',
           linkedinUrl: profileData?.linkedin_url || '',
           summary: profileData?.summary || '',
-          useRegisteredEmail: profileData?.use_registered_email || false,
-          isVerified: profileData?.is_linkedin_verified || false,
           profilePictureUrl: profileData?.profile_picture_url || '',
           skills: profileData?.skills ? profileData.skills.map((name: string) => ({ name })) : [],
           education: eduData ? eduData.map((e: any) => ({

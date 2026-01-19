@@ -9,9 +9,8 @@ export interface UserProfile {
   profilePictureUrl?: string;
   currentRole: string;
   summary: string;
-  useRegisteredEmail: boolean; // New field
-  isVerified?: boolean; // LinkedIn verified
-  skills: { id?: string; name: string }[]; // Updated to object array
+  isVerified?: boolean; // LinkedIn verified (UI-only, not stored in DB)
+  skills: { id?: string; name: string }[];
   experience: ExperienceItem[];
   education: EducationItem[];
   rawResumeText?: string;
