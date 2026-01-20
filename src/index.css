@@ -31,41 +31,4 @@
   body {
     @apply antialiased;
   }
-
-  /* Custom select dropdown option styling */
-  select {
-    border: none !important;
-    outline: none !important;
-  }
-
-  select:focus {
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-  }
-
-  select option {
-    background-color: white;
-    color: #475569;
-    padding: 8px 12px;
-  }
-
-  select option:hover,
-  select option:focus,
-  select option:checked {
-    background-color: #fff7ed !important;
-    color: #FF6B00 !important;
-  }
-
-  .dark select option {
-    background-color: #1e293b;
-    color: #cbd5e1;
-  }
-
-  .dark select option:hover,
-  .dark select option:focus,
-  .dark select option:checked {
-    background-color: rgba(255, 107, 0, 0.2) !important;
-    color: #FF6B00 !important;
-  }
 }
