@@ -276,14 +276,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <button
                 type="button"
                 onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
-                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center gap-2"
+                className="w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <span>{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
 
               {openDropdown === 'date' && (
-                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md">
+                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border-0">
                   {datePostedOptions.map((opt) => {
                     const selected = opt.value === filters.date_posted;
                     return (
@@ -297,8 +297,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         className={
                           `w-full text-left px-4 py-2 text-xs transition-colors ` +
                           (selected
-                            ? 'bg-orange-50 text-[#FF6B00]'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00]')
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                         }
                       >
                         {opt.label}
@@ -313,14 +313,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <button
                 type="button"
                 onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
-                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center gap-2"
+                className="w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <span>{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
 
               {openDropdown === 'experience' && (
-                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md">
+                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border-0">
                   {experienceOptions.map((opt) => {
                     const selected = opt.value === filters.experienceLevel;
                     return (
@@ -334,8 +334,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         className={
                           `w-full text-left px-4 py-2 text-xs transition-colors ` +
                           (selected
-                            ? 'bg-orange-50 text-[#FF6B00]'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00]')
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                         }
                       >
                         {opt.label}

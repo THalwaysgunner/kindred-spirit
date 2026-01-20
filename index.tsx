@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { Toaster } from "sonner";
 import App from "./App";
-import "./src/index.css";
+import "./index.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
