@@ -162,6 +162,42 @@ export type Database = {
           },
         ]
       }
+      ete_categories: {
+        Row: {
+          category: number
+          category_description: string
+          element_id: string
+          scale_id: string
+        }
+        Insert: {
+          category: number
+          category_description: string
+          element_id: string
+          scale_id: string
+        }
+        Update: {
+          category?: number
+          category_description?: string
+          element_id?: string
+          scale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ete_categories_element_id_fkey"
+            columns: ["element_id"]
+            isOneToOne: false
+            referencedRelation: "content_model_reference"
+            referencedColumns: ["element_id"]
+          },
+          {
+            foreignKeyName: "ete_categories_scale_id_fkey"
+            columns: ["scale_id"]
+            isOneToOne: false
+            referencedRelation: "scales_reference"
+            referencedColumns: ["scale_id"]
+          },
+        ]
+      }
       experience: {
         Row: {
           company: string
@@ -386,6 +422,42 @@ export type Database = {
         }
         Relationships: []
       }
+      level_scale_anchors: {
+        Row: {
+          anchor_description: string
+          anchor_value: number
+          element_id: string
+          scale_id: string
+        }
+        Insert: {
+          anchor_description: string
+          anchor_value: number
+          element_id: string
+          scale_id: string
+        }
+        Update: {
+          anchor_description?: string
+          anchor_value?: number
+          element_id?: string
+          scale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "level_scale_anchors_element_id_fkey"
+            columns: ["element_id"]
+            isOneToOne: false
+            referencedRelation: "content_model_reference"
+            referencedColumns: ["element_id"]
+          },
+          {
+            foreignKeyName: "level_scale_anchors_scale_id_fkey"
+            columns: ["scale_id"]
+            isOneToOne: false
+            referencedRelation: "scales_reference"
+            referencedColumns: ["scale_id"]
+          },
+        ]
+      }
       occupation_data: {
         Row: {
           description: string
@@ -505,6 +577,27 @@ export type Database = {
           profile_picture_url?: string | null
           summary?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      scales_reference: {
+        Row: {
+          maximum: number
+          minimum: number
+          scale_id: string
+          scale_name: string
+        }
+        Insert: {
+          maximum: number
+          minimum: number
+          scale_id: string
+          scale_name: string
+        }
+        Update: {
+          maximum?: number
+          minimum?: number
+          scale_id?: string
+          scale_name?: string
         }
         Relationships: []
       }
