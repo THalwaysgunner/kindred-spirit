@@ -35,9 +35,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [isTabsExpanded, setIsTabsExpanded] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const [openDropdown, setOpenDropdown] = useState<'date' | 'experience' | null>(null);
-  const dateDropdownRef = useRef<HTMLDivElement>(null);
+  const [openDropdown, setOpenDropdown] = useState<'remote' | 'experience' | 'date' | null>(null);
+  const remoteDropdownRef = useRef<HTMLDivElement>(null);
   const experienceDropdownRef = useRef<HTMLDivElement>(null);
+  const dateDropdownRef = useRef<HTMLDivElement>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -58,11 +59,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const mainTabs = ['All', 'Remote', 'On-site', 'Hybrid', 'Easy Apply'];
   const moreTabs = ['Entry Level', 'Mid-Senior', 'Director', 'Internship'];
 
-  const datePostedOptions = [
-    { value: '', label: 'Date Posted' },
-    { value: 'day', label: 'Past 24 hours' },
-    { value: 'week', label: 'Past Week' },
-    { value: 'month', label: 'Past Month' },
+  const remoteOptions = [
+    { value: '', label: 'Work Type' },
+    { value: 'remote', label: 'Remote' },
+    { value: 'onsite', label: 'On-site' },
+    { value: 'hybrid', label: 'Hybrid' },
   ];
 
   const experienceOptions = [
@@ -72,6 +73,15 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     { value: 'associate', label: 'Associate' },
     { value: 'mid_senior', label: 'Mid-Senior' },
     { value: 'director', label: 'Director' },
+    { value: 'executive', label: 'Executive' },
+  ];
+
+  // Client-side filter options (applied after fetching)
+  const datePostedOptions = [
+    { value: '', label: 'Any time' },
+    { value: 'hour', label: 'Past hour' },
+    { value: 'day', label: 'Past 24 hours' },
+    { value: 'week', label: 'Past week' },
   ];
 
   const getOptionLabel = (options: { value: string; label: string }[], value: string) => {
@@ -124,9 +134,24 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     if (e.key === 'Enter') handleSearch(1);
   };
 
-  // Filter results based on active tab
+  // Filter results based on active tab AND client-side date filter
   const filteredResults = useMemo(() => {
     return results.filter(job => {
+      // First apply date filter (client-side)
+      if (filters.date_posted) {
+        const postedAt = job.posted_at?.toLowerCase() || '';
+        if (filters.date_posted === 'hour' && !postedAt.includes('minute')) {
+          return false;
+        }
+        if (filters.date_posted === 'day' && !postedAt.includes('hour') && !postedAt.includes('minute')) {
+          return false;
+        }
+        if (filters.date_posted === 'week' && postedAt.includes('month')) {
+          return false;
+        }
+      }
+
+      // Then apply tab filter
       switch (activeTab) {
         case 'All': return true;
         case 'Remote': return job.work_type?.toLowerCase().includes('remote');
@@ -140,7 +165,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         default: return true;
       }
     });
-  }, [results, activeTab]);
+  }, [results, activeTab, filters.date_posted]);
 
   // Stats calculations
   const stats = useMemo(() => {
@@ -157,15 +182,16 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     ];
   }, [results]);
 
-  // Close sidebar when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const targetNode = event.target as Node;
 
       if (openDropdown) {
-        const dateContains = !!dateDropdownRef.current?.contains(targetNode);
+        const remoteContains = !!remoteDropdownRef.current?.contains(targetNode);
         const expContains = !!experienceDropdownRef.current?.contains(targetNode);
-        if (!dateContains && !expContains) setOpenDropdown(null);
+        const dateContains = !!dateDropdownRef.current?.contains(targetNode);
+        if (!remoteContains && !expContains && !dateContains) setOpenDropdown(null);
       }
 
       if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
@@ -274,27 +300,27 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {/* Filter Dropdowns */}
-            <div ref={dateDropdownRef} className="relative">
+            {/* API Search Filters */}
+            <div ref={remoteDropdownRef} className="relative">
               <button
                 type="button"
-                onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
-                className="w-44 min-w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+                onClick={() => setOpenDropdown(openDropdown === 'remote' ? null : 'remote')}
+                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
-                <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+                <span className="whitespace-nowrap">{getOptionLabel(remoteOptions, filters.remote)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
-              {openDropdown === 'date' && (
-                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border-0">
-                  {datePostedOptions.map((opt) => {
-                    const selected = opt.value === filters.date_posted;
+              {openDropdown === 'remote' && (
+                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                  {remoteOptions.map((opt) => {
+                    const selected = opt.value === filters.remote;
                     return (
                       <button
                         key={opt.value || 'empty'}
                         type="button"
                         onClick={() => {
-                          setFilters({ ...filters, date_posted: opt.value });
+                          setFilters({ ...filters, remote: opt.value });
                           setOpenDropdown(null);
                         }}
                         className={
@@ -316,14 +342,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <button
                 type="button"
                 onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
-                className="w-44 min-w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
               {openDropdown === 'experience' && (
-                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border-0">
+                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                   {experienceOptions.map((opt) => {
                     const selected = opt.value === filters.experienceLevel;
                     return (
@@ -332,6 +358,52 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         type="button"
                         onClick={() => {
                           setFilters({ ...filters, experienceLevel: opt.value });
+                          setOpenDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
+
+            {/* Client-side Filter (Date) */}
+            <div ref={dateDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
+                className="w-36 min-w-36 px-4 py-2.5 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-xs tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer transition-colors flex items-center justify-between"
+                title="Filter results (client-side)"
+              >
+                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-1.5" />
+                <span className="whitespace-nowrap flex-1">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+
+              {openDropdown === 'date' && (
+                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">Filter Results</span>
+                  </div>
+                  {datePostedOptions.map((opt) => {
+                    const selected = opt.value === filters.date_posted;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFilters({ ...filters, date_posted: opt.value });
                           setOpenDropdown(null);
                         }}
                         className={
