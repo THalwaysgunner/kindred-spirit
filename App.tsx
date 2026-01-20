@@ -665,15 +665,16 @@ export default function App() {
         )}
       </button>
 
-      {/* AI Study Coach Toggle Button - Perfectly aligned at 35% */}
+      {/* AI Study Coach Toggle Button - Attached to sidebar */}
       {view === 'interview-prep' && (
         <button
           onClick={() => setIsChatOpen(!isChatOpen)}
-          className={`fixed z-[60] flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group ${isChatOpen ? 'right-[384px]' : 'right-0'}`}
+          className="fixed z-[60] flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group"
           style={{
             top: '35%',
             marginTop: '-24px',
-            transition: 'right 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+            right: isChatOpen ? '384px' : '0px',
+            transition: 'right 0.3s ease-out'
           }}
           title={isChatOpen ? "Close Study Coach" : "Open Study Coach"}
         >
@@ -849,8 +850,14 @@ export default function App() {
           </div>
 
           {/* AI Study Coach Panel */}
-          {view === 'interview-prep' && isChatOpen && (
-            <div className="fixed right-0 top-20 bottom-0 w-[384px] bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-300">
+          {view === 'interview-prep' && (
+            <div 
+              className="fixed top-20 bottom-0 w-[384px] bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 shadow-2xl z-40 flex flex-col"
+              style={{
+                right: isChatOpen ? '0px' : '-384px',
+                transition: 'right 0.3s ease-out'
+              }}
+            >
               <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#5D5FEF] flex items-center justify-center">
