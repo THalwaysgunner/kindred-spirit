@@ -227,6 +227,117 @@ export type Database = {
         }
         Relationships: []
       }
+      job_search_links: {
+        Row: {
+          created_at: string | null
+          id: string
+          job_id: string
+          relevance_score: number | null
+          search_term_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          job_id: string
+          relevance_score?: number | null
+          search_term_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          job_id?: string
+          relevance_score?: number | null
+          search_term_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_search_links_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_search_links_search_term_id_fkey"
+            columns: ["search_term_id"]
+            isOneToOne: false
+            referencedRelation: "search_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jobs: {
+        Row: {
+          applicant_count: number | null
+          benefits: Json | null
+          company: string
+          company_url: string | null
+          created_at: string | null
+          description: string | null
+          expires_at: string | null
+          id: string
+          is_easy_apply: boolean | null
+          job_id: string | null
+          job_title: string
+          job_url: string
+          location: string | null
+          posted_at: string | null
+          posted_at_text: string | null
+          raw_data: Json | null
+          requirements: string | null
+          salary: string | null
+          skills: Json | null
+          updated_at: string | null
+          work_type: string | null
+        }
+        Insert: {
+          applicant_count?: number | null
+          benefits?: Json | null
+          company: string
+          company_url?: string | null
+          created_at?: string | null
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          is_easy_apply?: boolean | null
+          job_id?: string | null
+          job_title: string
+          job_url: string
+          location?: string | null
+          posted_at?: string | null
+          posted_at_text?: string | null
+          raw_data?: Json | null
+          requirements?: string | null
+          salary?: string | null
+          skills?: Json | null
+          updated_at?: string | null
+          work_type?: string | null
+        }
+        Update: {
+          applicant_count?: number | null
+          benefits?: Json | null
+          company?: string
+          company_url?: string | null
+          created_at?: string | null
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          is_easy_apply?: boolean | null
+          job_id?: string | null
+          job_title?: string
+          job_url?: string
+          location?: string | null
+          posted_at?: string | null
+          posted_at_text?: string | null
+          raw_data?: Json | null
+          requirements?: string | null
+          salary?: string | null
+          skills?: Json | null
+          updated_at?: string | null
+          work_type?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           email: string | null
@@ -260,6 +371,42 @@ export type Database = {
           profile_picture_url?: string | null
           summary?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      search_terms: {
+        Row: {
+          canonical_term: string
+          created_at: string | null
+          filters: Json | null
+          id: string
+          last_fetched_at: string | null
+          last_searched_at: string | null
+          location: string | null
+          raw_term: string
+          search_count: number | null
+        }
+        Insert: {
+          canonical_term: string
+          created_at?: string | null
+          filters?: Json | null
+          id?: string
+          last_fetched_at?: string | null
+          last_searched_at?: string | null
+          location?: string | null
+          raw_term: string
+          search_count?: number | null
+        }
+        Update: {
+          canonical_term?: string
+          created_at?: string | null
+          filters?: Json | null
+          id?: string
+          last_fetched_at?: string | null
+          last_searched_at?: string | null
+          location?: string | null
+          raw_term?: string
+          search_count?: number | null
         }
         Relationships: []
       }
