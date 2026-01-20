@@ -8,7 +8,7 @@ import { Profile } from './components/Profile';
 import { JobSearch } from './components/JobSearch';
 import { GetReady } from './components/GetReady';
 import { ApplicationsList } from './components/ApplicationsList';
-import { InterviewPrep } from './components/InterviewPrep';
+import { ApplicationsList as InterviewPrep } from './components/InterviewPrep';
 import {
   LayoutDashboard,
   FileText,
@@ -664,76 +664,12 @@ export default function App() {
         )}
       </button>
 
-      {/* AI Study Coach Toggle Button - Perfectly aligned at 35% */}
-      {view === 'interview-prep' && (
-        <button
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          className="fixed z-[60] right-0 transition-all duration-300 flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group"
-          style={{
-            top: '35%',
-            transform: `translateX(${isChatOpen ? '-384px' : '0'})`,
-            marginTop: '-24px'
-          }}
-          title={isChatOpen ? "Close Study Coach" : "Open Study Coach"}
-        >
-          <Bot className="w-4 h-4 text-white" />
-          <span className={`absolute top-2 ${isChatOpen ? 'left-2' : 'right-2'} w-2 h-2 bg-green-500 rounded-full border border-white ${!isChatOpen ? 'animate-pulse' : ''}`}></span>
-        </button>
-      )}
-
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        <header className={`h-20 bg-white dark:bg-[#0F111A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-40 transition-colors ${view === 'applications-list' ? 'px-0' : 'px-8'}`}>
-          <div className={`flex-1 flex items-center justify-between ${view === 'applications-list' ? 'px-8' : ''}`}>
-            <div className="flex items-center gap-4">
-              {view === 'interview-prep' ? (
-                <div className="flex items-center gap-6">
-                  <h2 className="text-slate-900 dark:text-white font-bold text-xl uppercase tracking-tight">Study Plan</h2>
-
-                  {/* Job Selector Dropdown in Header */}
-                  <div className="relative group z-50">
-                    <button className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl transition-all h-10">
-                      <div className="w-6 h-6 rounded-md bg-[#5D5FEF] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                        {applications.find(a => a.id === selectedStudyAppId)?.requirements.company.charAt(0) || '?'}
-                      </div>
-                      <div className="text-left">
-                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Target Job</div>
-                        <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 leading-none">
-                          {applications.find(a => a.id === selectedStudyAppId)?.requirements.company || 'Select Job'}
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                        </div>
-                      </div>
-                    </button>
-
-                    <div className="absolute left-0 top-full mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden hidden group-hover:block animate-in fade-in zoom-in-95 duration-200 backdrop-blur-xl transition-all">
-                      <div className="p-2 space-y-1">
-                        {applications.map(app => (
-                          <div
-                            key={app.id}
-                            onClick={() => setSelectedStudyAppId(app.id)}
-                            className={`px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-colors ${selectedStudyAppId === app.id
-                              ? 'bg-[#5D5FEF]/10 dark:bg-[#5D5FEF]/20'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                              }`}
-                          >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${selectedStudyAppId === app.id
-                              ? 'bg-[#5D5FEF] text-white border-transparent'
-                              : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600'
-                              }`}>
-                              {app.requirements.company.charAt(0)}
-                            </div>
-                            <div className="overflow-hidden">
-                              <div className="text-slate-900 dark:text-white font-bold text-sm truncate">{app.requirements.company}</div>
-                              <div className="text-slate-500 text-[10px] uppercase font-bold tracking-wider truncate">{app.requirements.title}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
+        <main className="flex-1 flex flex-col relative overflow-hidden">
+          <header className={`h-20 bg-white dark:bg-[#0F111A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-40 transition-colors ${(view === 'applications-list' || view === 'interview-prep') ? 'px-0' : 'px-8'}`}>
+            <div className={`flex-1 flex items-center justify-between ${(view === 'applications-list' || view === 'interview-prep') ? 'px-8' : ''}`}>
+              <div className="flex items-center gap-4">
                 <h2 className="text-slate-900 dark:text-white font-bold text-xl tracking-tight flex items-baseline gap-3">
-                  {view === 'applications-list' ? 'My Applications' : (
+                  {(view === 'applications-list' || view === 'interview-prep') ? 'My Applications' : (
                     <span>
                       {view === 'dashboard' && 'Dashboard'}
                       {view === 'create' && 'Create Application'}
@@ -743,21 +679,20 @@ export default function App() {
                       {view === 'get-ready' && 'Get Ready'}
                     </span>
                   )}
-                  {view === 'applications-list' && (
+                  {(view === 'applications-list' || view === 'interview-prep') && (
                     <span className="text-slate-500 text-sm font-bold lowercase">
                       {applications.length}
                     </span>
                   )}
                 </h2>
-              )}
-            </div>
+              </div>
 
-            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4">
 
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-900 hover:text-white dark:hover:bg-slate-50 dark:hover:text-yellow-400 transition-all border border-slate-100 dark:border-slate-700"
-              >
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-900 hover:text-white dark:hover:bg-slate-50 dark:hover:text-yellow-400 transition-all border border-slate-100 dark:border-slate-700"
+                >
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
 
@@ -789,7 +724,7 @@ export default function App() {
 
         <div className={`flex-1 overflow-hidden flex flex-row transition-colors relative ${view === 'create' ? 'bg-white' : 'bg-slate-50/50'} dark:bg-[#0F111A]`}>
           <div className="flex-1 overflow-y-auto no-scrollbar">
-            <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'} ${isChatOpen && view === 'interview-prep' ? 'mr-[384px]' : ''}`}>
+            <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'}`}>
               {view === 'dashboard' && <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />}
               {view === 'create' && (
                 <Wizard
@@ -833,7 +768,17 @@ export default function App() {
               )}
               {view === 'search' && <JobSearch onAnalyzeJob={handleAnalyzeJob} />}
               {view === 'company-research' && <GetReady applications={applications} />}
-              {view === 'interview-prep' && <InterviewPrep applications={applications} selectedId={selectedStudyAppId} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} />}
+              {view === 'interview-prep' && (
+                <InterviewPrep
+                  applications={applications}
+                  profile={profile}
+                  onViewApplication={handleViewApplication}
+                  onImport={(file) => {
+                    setInitialFile(file);
+                    setView('create');
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>
