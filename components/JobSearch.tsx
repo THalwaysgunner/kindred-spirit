@@ -270,6 +270,48 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <ChevronRight className="w-4 h-4 text-slate-400 hover:text-[#FF6B00] stroke-[1.5] transition-colors" />
             )}
           </button>
+
+          {/* Spacer to push date filter to right */}
+          <div className="flex-1"></div>
+
+          {/* Client-side Filter (Date) - on tabs row */}
+          <div ref={dateDropdownRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
+              className="px-3 py-1.5 text-xs tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer transition-colors flex items-center gap-1.5 hover:text-[#FF6B00]"
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+            </button>
+
+            {openDropdown === 'date' && (
+              <div className="absolute top-full right-0 mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                {datePostedOptions.map((opt) => {
+                  const selected = opt.value === filters.date_posted;
+                  return (
+                    <button
+                      key={opt.value || 'empty'}
+                      type="button"
+                      onClick={() => {
+                        setFilters({ ...filters, date_posted: opt.value });
+                        setOpenDropdown(null);
+                      }}
+                      className={
+                        `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                        (selected
+                          ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                          : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 3. Action Toolbar Row - Same as ApplicationsList */}
@@ -358,52 +400,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         type="button"
                         onClick={() => {
                           setFilters({ ...filters, experienceLevel: opt.value });
-                          setOpenDropdown(null);
-                        }}
-                        className={
-                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
-                          (selected
-                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
-                        }
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div className="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
-
-            {/* Client-side Filter (Date) */}
-            <div ref={dateDropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
-                className="w-36 min-w-36 px-4 py-2.5 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-xs tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer transition-colors flex items-center justify-between"
-                title="Filter results (client-side)"
-              >
-                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-1.5" />
-                <span className="whitespace-nowrap flex-1">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-              </button>
-
-              {openDropdown === 'date' && (
-                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">Filter Results</span>
-                  </div>
-                  {datePostedOptions.map((opt) => {
-                    const selected = opt.value === filters.date_posted;
-                    return (
-                      <button
-                        key={opt.value || 'empty'}
-                        type="button"
-                        onClick={() => {
-                          setFilters({ ...filters, date_posted: opt.value });
                           setOpenDropdown(null);
                         }}
                         className={
