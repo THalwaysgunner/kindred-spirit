@@ -24,6 +24,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
   const [job, setJob] = useState<ImportJob | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadLabel, setUploadLabel] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -78,6 +79,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
 
     setIsUploading(true);
     setError(null);
+    setUploadLabel('Starting...');
 
     try {
       // Create job record
@@ -94,28 +96,64 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
       if (jobError) throw jobError;
       setJob(newJob);
 
-      // Upload all files
-      const formData = new FormData();
-      formData.append('jobId', newJob.id);
-      
-      files.forEach((file, index) => {
-        formData.append(`file${index}`, file);
-      });
-
+      // Upload in small batches to avoid backend memory limits when parsing multipart form-data.
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/import-sql-zip`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${anonKey}`
-        },
-        body: formData
-      });
+      const MAX_BATCH_BYTES = 6 * 1024 * 1024; // ~6MB per request (auto-splits)
+      const batches: File[][] = [];
+      let current: File[] = [];
+      let currentBytes = 0;
+      for (const f of files) {
+        if (current.length > 0 && currentBytes + f.size > MAX_BATCH_BYTES) {
+          batches.push(current);
+          current = [];
+          currentBytes = 0;
+        }
+        // If a single file is huge, send it alone.
+        if (current.length === 0 && f.size > MAX_BATCH_BYTES) {
+          batches.push([f]);
+          continue;
+        }
+        current.push(f);
+        currentBytes += f.size;
+      }
+      if (current.length) batches.push(current);
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Import failed');
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi];
+        setUploadLabel(`Uploading batch ${bi + 1}/${batches.length} (${batch.length} file(s))...`);
+
+        const formData = new FormData();
+        formData.append('jobId', newJob.id);
+        formData.append('totalFiles', String(files.length));
+        formData.append('batchIndex', String(bi));
+        formData.append('isLastBatch', String(bi === batches.length - 1));
+
+        batch.forEach((file, index) => {
+          formData.append(`file${index}`, file);
+        });
+
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 120000);
+
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/import-sql-zip`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${anonKey}`
+            },
+            body: formData,
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Import failed');
+          }
+        } finally {
+          window.clearTimeout(timeout);
+        }
       }
 
       // Fetch final job state
@@ -136,6 +174,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
       }
     } finally {
       setIsUploading(false);
+      setUploadLabel('');
     }
   };
 
@@ -237,7 +276,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
             {isUploading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Uploading {files.length} files...
+                {uploadLabel || `Uploading ${files.length} files...`}
               </>
             ) : (
               <>
