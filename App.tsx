@@ -9,6 +9,7 @@ import { JobSearch } from './components/JobSearch';
 import { GetReady } from './components/GetReady';
 import { ApplicationsList } from './components/ApplicationsList';
 import { ApplicationsList as InterviewPrep } from './components/InterviewPrep';
+import { SqlImporter } from './components/SqlImporter';
 import {
   LayoutDashboard,
   FileText,
@@ -782,7 +783,13 @@ export default function App() {
         <div className={`flex-1 overflow-hidden flex flex-row transition-colors relative ${view === 'create' ? 'bg-white' : 'bg-slate-50/50'} dark:bg-[#0F111A]`}>
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' || view === 'search' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'} ${isChatOpen && view === 'interview-prep' ? 'mr-[384px]' : ''}`}>
-              {view === 'dashboard' && <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />}
+              {view === 'dashboard' && (
+                <div className="space-y-6">
+                  <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />
+                  {/* Temp SQL Importer */}
+                  {session?.user?.id && <SqlImporter userId={session.user.id} />}
+                </div>
+              )}
               {view === 'create' && (
                 <Wizard
                   onComplete={handleCreateApplication}

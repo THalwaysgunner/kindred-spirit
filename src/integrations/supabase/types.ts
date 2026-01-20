@@ -512,7 +512,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      onet_exec: { Args: { stmt: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
