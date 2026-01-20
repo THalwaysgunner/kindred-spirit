@@ -219,11 +219,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({ applications
   };
 
   return (
-    <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden">
-      {/* Table Side */}
+    <div className="flex relative h-full bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-hidden">
+      {/* Main Content */}
       <div className={`flex flex-col w-full transition-all duration-300 ${selectedApp ? 'mr-[600px]' : ''}`}>
-        {/* 1. Study Plan Clickable Cards */}
-        <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full">
+        {/* 1. Study Plan Clickable Cards - Sticky */}
+        <div className="sticky top-0 z-10 grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full">
           {studyPlanCards.map((card, i) => (
             <button
               key={i}
@@ -234,6 +234,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({ applications
           ))}
         </div>
 
+        {/* Scrollable content area */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Content will go here */}
+        </div>
       </div>
 
       {/* 5. Right Slide-out Sidebar (Application Details) */}
