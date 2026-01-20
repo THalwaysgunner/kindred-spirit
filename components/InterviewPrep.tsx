@@ -119,20 +119,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({ applications
       meetingFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [isAddingMeeting]);
-  // Stats Calculations
-  const stats = useMemo(() => {
-    const total = applications.length;
-    const applied = applications.filter(a => a.status === 'Applied').length;
-    const interviewing = applications.filter(a => a.status === 'Interviewing').length;
-    const offers = applications.filter(a => a.status === 'Offer').length;
-
-    return [
-      { label: 'Total Applications', value: total, growth: '12%', trend: 'up' },
-      { label: 'Applied', value: applied, growth: '4.2%', trend: 'up' },
-      { label: 'Interviewing', value: interviewing, growth: '15%', trend: 'up' },
-      { label: 'Offers', value: offers, growth: '2%', trend: 'up' },
-    ];
-  }, [applications]);
+  // Study Plan Card Labels
+  const studyPlanCards = [
+    { label: 'Overview' },
+    { label: 'Roadmap' },
+    { label: 'Skills & Projects' },
+    { label: 'Track Progress' },
+  ];
 
   // Filter Logic
   const filteredApps = applications.filter(app => {
@@ -229,45 +222,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({ applications
     <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden">
       {/* Table Side */}
       <div className={`flex flex-col w-full transition-all duration-300 ${selectedApp ? 'mr-[600px]' : ''}`}>
-        {/* 1. Stat Cards Unified Grid Area */}
+        {/* 1. Study Plan Clickable Cards */}
         <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full">
-          {stats.map((stat, i) => (
-            <div key={i} className="bg-white dark:bg-[#0D0F16] p-6 flex flex-col h-28 font-sans group">
-              <p className="text-xs font-normal text-slate-400 tracking-wider mb-auto">{stat.label}</p>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-baseline gap-2 relative -top-2">
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white leading-none">{stat.value}</span>
-                  <div className={`flex items-center gap-0.5 text-sm font-bold ${stat.trend === 'up' ? 'text-green-500' : 'text-red-500'}`}>
-                    <TrendingUp className="w-4 h-4" />
-                    <span>{stat.growth}</span>
-                  </div>
-                </div>
-
-                <div className="w-1/3 h-10 opacity-30 group-hover:opacity-100 transition-opacity mr-6">
-                  <svg viewBox="0 0 100 20" className="w-full h-full text-[#FF6B00] overflow-visible">
-                    <defs>
-                      <linearGradient id={`grad-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" style={{ stopColor: '#FF6B00', stopOpacity: 0.2 }} />
-                        <stop offset="100%" style={{ stopColor: '#FF6B00', stopOpacity: 0 }} />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8 V 20 H 0 Z"
-                      fill={`url(#grad-${i})`}
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
+          {studyPlanCards.map((card, i) => (
+            <button
+              key={i}
+              className="bg-white dark:bg-[#0D0F16] p-6 flex items-center justify-center h-28 font-sans cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left w-full"
+            >
+              <p className="text-xs font-normal text-slate-400 tracking-wider">{card.label}</p>
+            </button>
           ))}
         </div>
 
