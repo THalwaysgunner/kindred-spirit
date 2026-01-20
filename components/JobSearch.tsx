@@ -14,11 +14,9 @@ import {
   ExternalLink,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   TrendingUp,
-  Plus,
   X,
-  Globe,
-  Calendar,
   Users
 } from 'lucide-react';
 import { ApifyService } from '../services/apifyService';
@@ -37,6 +35,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [isTabsExpanded, setIsTabsExpanded] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
+  const [openDropdown, setOpenDropdown] = useState<'date' | 'experience' | null>(null);
+  const dateDropdownRef = useRef<HTMLDivElement>(null);
+  const experienceDropdownRef = useRef<HTMLDivElement>(null);
+
   const [filters, setFilters] = useState<SearchFilters>({
     keywords: '',
     location: '',
@@ -48,6 +50,27 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
   const mainTabs = ['All', 'Remote', 'On-site', 'Hybrid', 'Easy Apply'];
   const moreTabs = ['Entry Level', 'Mid-Senior', 'Director', 'Internship'];
+
+  const datePostedOptions = [
+    { value: '', label: 'Date Posted' },
+    { value: 'day', label: 'Past 24 hours' },
+    { value: 'week', label: 'Past Week' },
+    { value: 'month', label: 'Past Month' },
+  ];
+
+  const experienceOptions = [
+    { value: '', label: 'Experience' },
+    { value: 'internship', label: 'Internship' },
+    { value: 'entry', label: 'Entry level' },
+    { value: 'associate', label: 'Associate' },
+    { value: 'mid_senior', label: 'Mid-Senior' },
+    { value: 'director', label: 'Director' },
+  ];
+
+  const getOptionLabel = (options: { value: string; label: string }[], value: string) => {
+    const found = options.find(o => o.value === value);
+    return found?.label ?? options[0]?.label ?? '';
+  };
 
   const handleSearch = async () => {
     if (!filters.keywords && !filters.location) return;
@@ -111,6 +134,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   // Close sidebar when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+
+      if (openDropdown) {
+        const dateContains = !!dateDropdownRef.current?.contains(targetNode);
+        const expContains = !!experienceDropdownRef.current?.contains(targetNode);
+        if (!dateContains && !expContains) setOpenDropdown(null);
+      }
+
       if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
         // Don't close if clicking on a table row
         const target = event.target as HTMLElement;
@@ -121,7 +152,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedJob]);
+  }, [selectedJob, openDropdown]);
 
   return (
     <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden">
@@ -241,31 +272,79 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
           <div className="flex items-center gap-3">
             {/* Filter Dropdowns */}
-            <select
-              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-all appearance-none"
-              style={{ border: 'none', outline: 'none' }}
-              value={filters.date_posted}
-              onChange={(e) => setFilters({ ...filters, date_posted: e.target.value })}
-            >
-              <option value="">Date Posted</option>
-              <option value="day">Past 24 hours</option>
-              <option value="week">Past Week</option>
-              <option value="month">Past Month</option>
-            </select>
+            <div ref={dateDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
+                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center gap-2"
+              >
+                <span>{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
 
-            <select
-              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-all appearance-none"
-              style={{ border: 'none', outline: 'none' }}
-              value={filters.experienceLevel}
-              onChange={(e) => setFilters({ ...filters, experienceLevel: e.target.value })}
-            >
-              <option value="">Experience</option>
-              <option value="internship">Internship</option>
-              <option value="entry">Entry level</option>
-              <option value="associate">Associate</option>
-              <option value="mid_senior">Mid-Senior</option>
-              <option value="director">Director</option>
-            </select>
+              {openDropdown === 'date' && (
+                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md">
+                  {datePostedOptions.map((opt) => {
+                    const selected = opt.value === filters.date_posted;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFilters({ ...filters, date_posted: opt.value });
+                          setOpenDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00]'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00]')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div ref={experienceDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
+                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center gap-2"
+              >
+                <span>{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {openDropdown === 'experience' && (
+                <div className="absolute top-full mt-1 w-48 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md">
+                  {experienceOptions.map((opt) => {
+                    const selected = opt.value === filters.experienceLevel;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFilters({ ...filters, experienceLevel: opt.value });
+                          setOpenDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00]'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00]')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <button
               onClick={handleSearch}
