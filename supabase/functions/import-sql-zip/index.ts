@@ -156,10 +156,21 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   let jobId: string | null = null;
+  const MAX_LOG_LINES = 500;
+  const trimLog = (arr: string[]) => (arr.length > MAX_LOG_LINES ? arr.slice(arr.length - MAX_LOG_LINES) : arr);
   
   try {
     const formData = await req.formData();
     jobId = formData.get('jobId') as string | null;
+    const totalFilesParam = formData.get('totalFiles');
+    const totalFiles = totalFilesParam ? Number(totalFilesParam) : 0;
+    const batchIndexParam = formData.get('batchIndex');
+    const batchIndex = batchIndexParam ? Number(batchIndexParam) : 0;
+    const isLastBatch = String(formData.get('isLastBatch') || 'false') === 'true';
+
+    if (!jobId) {
+      throw new Error('Missing jobId');
+    }
     
     // Get all uploaded files
     const files: File[] = [];
@@ -176,23 +187,34 @@ serve(async (req) => {
     // Sort files by name (01_, 02_, etc.)
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
-    console.log(`[Import] Received ${files.length} SQL files`);
-    console.log(`[Import] Order: ${files.map(f => f.name).join(', ')}`);
+    // Load existing job state so we can increment counts across multiple batch requests.
+    const { data: existingJob } = await supabase
+      .from('onet_import_jobs')
+      .select('files_total, files_done, tables_created, rows_inserted, log, started_at')
+      .eq('id', jobId)
+      .single();
 
-    if (jobId) {
-      await supabase.from('onet_import_jobs').update({
-        status: 'processing',
-        started_at: new Date().toISOString(),
-        files_total: files.length,
-        last_message: `Processing ${files.length} SQL files...`,
-        log: [`Received ${files.length} files`, `Order: ${files.map(f => f.name).join(', ')}`]
-      }).eq('id', jobId);
-    }
-
-    let totalTablesCreated = 0;
-    let totalRowsInserted = 0;
+    const jobFilesTotal = (totalFiles && Number.isFinite(totalFiles)) ? totalFiles : (existingJob?.files_total || 0);
+    const baseFilesDone = existingJob?.files_done || 0;
+    let totalTablesCreated = existingJob?.tables_created || 0;
+    let totalRowsInserted = existingJob?.rows_inserted || 0;
     let filesProcessed = 0;
-    const logs: string[] = [`Starting import of ${files.length} SQL files`];
+
+    const logs: string[] = Array.isArray(existingJob?.log) ? [...existingJob.log] : [];
+
+    console.log(`[Import] Batch ${batchIndex}: received ${files.length} SQL file(s)`);
+    console.log(`[Import] Batch ${batchIndex} order: ${files.map(f => f.name).join(', ')}`);
+
+    logs.push(`\n=== BATCH ${batchIndex} ===`);
+    logs.push(`Received ${files.length} file(s): ${files.map(f => f.name).join(', ')}`);
+
+    await supabase.from('onet_import_jobs').update({
+      status: 'processing',
+      started_at: existingJob?.started_at || new Date().toISOString(),
+      files_total: jobFilesTotal || existingJob?.files_total || baseFilesDone + files.length,
+      last_message: `Processing batch ${batchIndex} (${files.length} file(s))...`,
+      log: trimLog(logs)
+    }).eq('id', jobId);
 
     // Process each SQL file in order
     for (const file of files) {
@@ -210,11 +232,11 @@ serve(async (req) => {
       if (jobId) {
         await supabase.from('onet_import_jobs').update({
           current_file: fileName,
-          files_done: filesProcessed,
+          files_done: baseFilesDone + filesProcessed,
           statements_total: statements.length,
           statements_done: 0,
           last_message: `Processing ${fileName}...`,
-          log: logs
+          log: trimLog(logs)
         }).eq('id', jobId);
       }
 
@@ -327,34 +349,45 @@ serve(async (req) => {
 
       if (jobId) {
         await supabase.from('onet_import_jobs').update({
-          files_done: filesProcessed,
+          files_done: baseFilesDone + filesProcessed,
           tables_created: totalTablesCreated,
           rows_inserted: totalRowsInserted,
-          log: logs
+          log: trimLog(logs)
         }).eq('id', jobId);
       }
     }
 
-    // Complete
-    logs.push(`\n=== IMPORT COMPLETE ===`);
-    logs.push(`Files: ${filesProcessed}/${files.length}`);
-    logs.push(`Tables created: ${totalTablesCreated}`);
-    logs.push(`Rows inserted: ${totalRowsInserted}`);
+    const newFilesDone = baseFilesDone + filesProcessed;
+    const shouldComplete = isLastBatch || (jobFilesTotal > 0 && newFilesDone >= jobFilesTotal);
 
-    if (jobId) {
+    if (shouldComplete) {
+      logs.push(`\n=== IMPORT COMPLETE ===`);
+      logs.push(`Files done: ${newFilesDone}/${jobFilesTotal || newFilesDone}`);
+      logs.push(`Tables created: ${totalTablesCreated}`);
+      logs.push(`Rows inserted: ${totalRowsInserted}`);
+
       await supabase.from('onet_import_jobs').update({
         status: 'completed',
         finished_at: new Date().toISOString(),
-        files_done: filesProcessed,
+        files_done: newFilesDone,
         tables_created: totalTablesCreated,
         rows_inserted: totalRowsInserted,
         current_file: null,
         last_message: `Completed: ${totalTablesCreated} tables, ${totalRowsInserted} rows`,
-        log: logs
+        log: trimLog(logs)
       }).eq('id', jobId);
-    }
 
-    console.log(`[Import] Complete: ${filesProcessed} files, ${totalTablesCreated} tables, ${totalRowsInserted} rows`);
+      console.log(`[Import] Complete: ${newFilesDone} files, ${totalTablesCreated} tables, ${totalRowsInserted} rows`);
+    } else {
+      await supabase.from('onet_import_jobs').update({
+        files_done: newFilesDone,
+        tables_created: totalTablesCreated,
+        rows_inserted: totalRowsInserted,
+        last_message: `Batch ${batchIndex} done. ${newFilesDone}/${jobFilesTotal || '?'} files completed.`,
+        log: trimLog(logs)
+      }).eq('id', jobId);
+      console.log(`[Import] Batch ${batchIndex} done: files_done=${newFilesDone}`);
+    }
 
     return new Response(JSON.stringify({
       success: true,
