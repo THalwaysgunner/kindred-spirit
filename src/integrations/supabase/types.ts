@@ -338,6 +338,74 @@ export type Database = {
         }
         Relationships: []
       }
+      onet_import_jobs: {
+        Row: {
+          created_at: string
+          current_file: string | null
+          current_phase: string | null
+          files_done: number | null
+          files_total: number | null
+          finished_at: string | null
+          id: string
+          last_message: string | null
+          log: string[]
+          rows_inserted: number | null
+          started_at: string | null
+          statements_done: number | null
+          statements_total: number | null
+          status: string
+          tables_created: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_file?: string | null
+          current_phase?: string | null
+          files_done?: number | null
+          files_total?: number | null
+          finished_at?: string | null
+          id?: string
+          last_message?: string | null
+          log?: string[]
+          rows_inserted?: number | null
+          started_at?: string | null
+          statements_done?: number | null
+          statements_total?: number | null
+          status?: string
+          tables_created?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_file?: string | null
+          current_phase?: string | null
+          files_done?: number | null
+          files_total?: number | null
+          finished_at?: string | null
+          id?: string
+          last_message?: string | null
+          log?: string[]
+          rows_inserted?: number | null
+          started_at?: string | null
+          statements_done?: number | null
+          statements_total?: number | null
+          status?: string
+          tables_created?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onet_import_jobs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           email: string | null
