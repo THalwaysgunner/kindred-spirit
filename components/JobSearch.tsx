@@ -1,6 +1,26 @@
-
-import React, { useState } from 'react';
-import { Search, MapPin, Briefcase, Filter, ArrowRight, Building2, Clock, Globe, Zap, Loader2, AlertCircle, Bookmark, Share2, CheckCircle2, MoreHorizontal, FileText } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  Search,
+  MapPin,
+  Briefcase,
+  Building2,
+  Clock,
+  Zap,
+  Loader2,
+  AlertCircle,
+  Share2,
+  CheckCircle2,
+  FileText,
+  ExternalLink,
+  ChevronRight,
+  ChevronLeft,
+  TrendingUp,
+  Plus,
+  X,
+  Globe,
+  Calendar,
+  Users
+} from 'lucide-react';
 import { ApifyService } from '../services/apifyService';
 import { JobSearchResult, SearchFilters } from '../types';
 
@@ -13,8 +33,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [results, setResults] = useState<JobSearchResult[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobSearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('All');
+  const [isTabsExpanded, setIsTabsExpanded] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Filter States
   const [filters, setFilters] = useState<SearchFilters>({
     keywords: '',
     location: '',
@@ -24,9 +46,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     easy_apply: ''
   });
 
+  const mainTabs = ['All', 'Remote', 'On-site', 'Hybrid', 'Easy Apply'];
+  const moreTabs = ['Entry Level', 'Mid-Senior', 'Director', 'Internship'];
+
   const handleSearch = async () => {
     if (!filters.keywords && !filters.location) return;
-    
+
     setLoading(true);
     setError(null);
     setResults([]);
@@ -50,343 +75,496 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     if (e.key === 'Enter') handleSearch();
   };
 
-  return (
-    <div className="h-full flex flex-col bg-[#F3F2EF] dark:bg-vexo-bg overflow-hidden relative">
-      
-      {/* Top Search Bar */}
-      <div className="bg-white dark:bg-vexo-card border-b border-slate-200 dark:border-slate-700 px-4 py-3 shrink-0 z-20">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-3">
-          
-          {/* Inputs Group */}
-          <div className="flex-1 flex flex-col md:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input 
-                type="text" 
-                placeholder="Search by title, skill, or company"
-                className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-transparent focus:bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 rounded-md text-sm transition-all outline-none dark:text-white"
-                value={filters.keywords}
-                onChange={(e) => setFilters({...filters, keywords: e.target.value})}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-            <div className="relative flex-1">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input 
-                type="text" 
-                placeholder="City, state, or zip code"
-                className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-transparent focus:bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 rounded-md text-sm transition-all outline-none dark:text-white"
-                value={filters.location}
-                onChange={(e) => setFilters({...filters, location: e.target.value})}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-          </div>
+  // Filter results based on active tab
+  const filteredResults = useMemo(() => {
+    return results.filter(job => {
+      switch (activeTab) {
+        case 'All': return true;
+        case 'Remote': return job.work_type?.toLowerCase().includes('remote');
+        case 'On-site': return job.work_type?.toLowerCase().includes('on-site') || job.work_type?.toLowerCase().includes('onsite');
+        case 'Hybrid': return job.work_type?.toLowerCase().includes('hybrid');
+        case 'Easy Apply': return job.is_easy_apply;
+        case 'Entry Level': return job.job_title?.toLowerCase().includes('entry') || job.job_title?.toLowerCase().includes('junior');
+        case 'Mid-Senior': return job.job_title?.toLowerCase().includes('senior') || job.job_title?.toLowerCase().includes('lead');
+        case 'Director': return job.job_title?.toLowerCase().includes('director') || job.job_title?.toLowerCase().includes('head');
+        case 'Internship': return job.job_title?.toLowerCase().includes('intern');
+        default: return true;
+      }
+    });
+  }, [results, activeTab]);
 
-          <button 
-            onClick={handleSearch}
-            disabled={loading}
-            className="px-6 py-2 bg-[#0A66C2] hover:bg-[#004182] text-white font-bold rounded-full text-sm transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
+  // Stats calculations
+  const stats = useMemo(() => {
+    const total = results.length;
+    const remote = results.filter(j => j.work_type?.toLowerCase().includes('remote')).length;
+    const easyApply = results.filter(j => j.is_easy_apply).length;
+    const recent = results.filter(j => j.posted_at?.toLowerCase().includes('hour') || j.posted_at?.toLowerCase().includes('minute')).length;
+
+    return [
+      { label: 'Total Results', value: total, growth: '', trend: 'up' },
+      { label: 'Remote Jobs', value: remote, growth: '', trend: 'up' },
+      { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
+      { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
+    ];
+  }, [results]);
+
+  // Close sidebar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        // Don't close if clicking on a table row
+        const target = event.target as HTMLElement;
+        if (!target.closest('tr[data-job-row]')) {
+          setSelectedJob(null);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectedJob]);
+
+  return (
+    <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden">
+      {/* Main Content */}
+      <div className={`flex flex-col w-full transition-all duration-300 ${selectedJob ? 'mr-[600px]' : ''}`}>
+
+        {/* 1. Stat Cards - Same as ApplicationsList */}
+        <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full">
+          {stats.map((stat, i) => (
+            <div key={i} className="bg-white dark:bg-[#0D0F16] p-6 flex flex-col h-28 font-sans group">
+              <p className="text-xs font-normal text-slate-400 tracking-wider mb-auto">{stat.label}</p>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-baseline gap-2 relative -top-2">
+                  <span className="text-3xl font-bold text-slate-900 dark:text-white leading-none">{stat.value}</span>
+                  {stat.growth && (
+                    <div className={`flex items-center gap-0.5 text-sm font-bold ${stat.trend === 'up' ? 'text-green-500' : 'text-red-500'}`}>
+                      <TrendingUp className="w-4 h-4" />
+                      <span>{stat.growth}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-1/3 h-10 opacity-30 group-hover:opacity-100 transition-opacity mr-6">
+                  <svg viewBox="0 0 100 20" className="w-full h-full text-[#FF6B00] overflow-visible">
+                    <defs>
+                      <linearGradient id={`grad-search-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style={{ stopColor: '#FF6B00', stopOpacity: 0.2 }} />
+                        <stop offset="100%" style={{ stopColor: '#FF6B00', stopOpacity: 0 }} />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8 V 20 H 0 Z"
+                      fill={`url(#grad-search-${i})`}
+                    />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 2. Sub Nav Tabs - Same as ApplicationsList */}
+        <div className="flex items-center gap-8 px-8 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar w-full">
+          {mainTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`py-4 text-xs font-medium tracking-wide border-b-2 transition-all whitespace-nowrap ${activeTab === tab
+                ? 'border-[#FF6B00] text-[#FF6B00]'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+            >
+              {tab}
+            </button>
+          ))}
+
+          {isTabsExpanded && moreTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`py-4 text-xs font-medium tracking-wide border-b-2 transition-all whitespace-nowrap animate-in slide-in-from-left-2 fade-in duration-300 ${activeTab === tab
+                ? 'border-[#FF6B00] text-[#FF6B00]'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+            >
+              {tab}
+            </button>
+          ))}
+
+          <button
+            onClick={() => setIsTabsExpanded(!isTabsExpanded)}
+            className="p-1 items-center flex transition-colors"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+            {isTabsExpanded ? (
+              <ChevronLeft className="w-4 h-4 text-[#FF6B00] hover:text-slate-900 dark:hover:text-white stroke-[1.5] transition-colors" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-400 hover:text-[#FF6B00] stroke-[1.5] transition-colors" />
+            )}
           </button>
         </div>
 
-        {/* Filter Chips */}
-        <div className="max-w-5xl mx-auto mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          <select 
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-slate-50 hover:border-slate-900 transition-colors cursor-pointer outline-none appearance-none"
-            value={filters.date_posted}
-            onChange={(e) => setFilters({...filters, date_posted: e.target.value})}
-          >
-            <option value="">Date Posted</option>
-            <option value="day">Past 24 hours</option>
-            <option value="week">Past Week</option>
-            <option value="month">Past Month</option>
-          </select>
-
-          <select 
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-slate-50 hover:border-slate-900 transition-colors cursor-pointer outline-none appearance-none"
-            value={filters.experienceLevel}
-            onChange={(e) => setFilters({...filters, experienceLevel: e.target.value})}
-          >
-            <option value="">Experience Level</option>
-            <option value="internship">Internship</option>
-            <option value="entry">Entry level</option>
-            <option value="associate">Associate</option>
-            <option value="mid_senior">Mid-Senior level</option>
-            <option value="director">Director</option>
-          </select>
-
-          <select 
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-slate-50 hover:border-slate-900 transition-colors cursor-pointer outline-none appearance-none"
-            value={filters.remote}
-            onChange={(e) => setFilters({...filters, remote: e.target.value})}
-          >
-            <option value="">Remote</option>
-            <option value="onsite">On-site</option>
-            <option value="remote">Remote</option>
-            <option value="hybrid">Hybrid</option>
-          </select>
-
-           <select 
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-slate-50 hover:border-slate-900 transition-colors cursor-pointer outline-none appearance-none"
-            value={filters.easy_apply}
-            onChange={(e) => setFilters({...filters, easy_apply: e.target.value})}
-          >
-            <option value="">Easy Apply</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Main Content Area - Split View */}
-      <div className="flex-1 overflow-hidden relative">
-        {loading && results.length === 0 && (
-          <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-20 flex items-center justify-center backdrop-blur-sm">
-             <div className="flex flex-col items-center gap-3">
-               <Loader2 className="w-10 h-10 text-[#0A66C2] animate-spin" />
-               <p className="text-slate-600 dark:text-slate-300 font-medium">Scanning LinkedIn...</p>
-             </div>
+        {/* 3. Action Toolbar Row - Same as ApplicationsList */}
+        <div className="flex items-center justify-between px-8 py-5 w-full">
+          <div className="flex items-center gap-4">
+            <div className="relative group w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by title, skill, or company"
+                value={filters.keywords}
+                onChange={(e) => setFilters({ ...filters, keywords: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
+              />
+            </div>
+            <div className="relative group w-60">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="City, state, or zip code"
+                value={filters.location}
+                onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
+              />
+            </div>
           </div>
-        )}
 
-        {results.length === 0 && !loading && !error && (
-           <div className="h-full flex flex-col items-center justify-center text-slate-400">
+          <div className="flex items-center gap-3">
+            {/* Filter Dropdowns */}
+            <select
+              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none text-slate-600 dark:text-slate-300 cursor-pointer hover:border-slate-300 transition-all"
+              value={filters.date_posted}
+              onChange={(e) => setFilters({ ...filters, date_posted: e.target.value })}
+            >
+              <option value="">Date Posted</option>
+              <option value="day">Past 24 hours</option>
+              <option value="week">Past Week</option>
+              <option value="month">Past Month</option>
+            </select>
+
+            <select
+              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none text-slate-600 dark:text-slate-300 cursor-pointer hover:border-slate-300 transition-all"
+              value={filters.experienceLevel}
+              onChange={(e) => setFilters({ ...filters, experienceLevel: e.target.value })}
+            >
+              <option value="">Experience</option>
+              <option value="internship">Internship</option>
+              <option value="entry">Entry level</option>
+              <option value="associate">Associate</option>
+              <option value="mid_senior">Mid-Senior</option>
+              <option value="director">Director</option>
+            </select>
+
+            <button
+              onClick={handleSearch}
+              disabled={loading}
+              className="px-5 py-2.5 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 stroke-[3]" />}
+              Search Jobs
+            </button>
+          </div>
+        </div>
+
+        {/* 4. Jobs Table */}
+        <div className="flex-1 w-full overflow-x-auto no-scrollbar">
+          {loading && results.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-10 h-10 text-[#FF6B00] animate-spin mb-4" />
+              <p className="text-slate-600 dark:text-slate-300 font-medium">Scanning LinkedIn...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex flex-col items-center justify-center py-20 text-red-500">
+              <AlertCircle className="w-12 h-12 mb-2" />
+              <p>{error}</p>
+            </div>
+          )}
+
+          {results.length === 0 && !loading && !error && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <Briefcase className="w-16 h-16 mb-4 opacity-20" />
               <p className="text-lg font-medium">No jobs found yet</p>
               <p className="text-sm">Try searching for keywords like "Frontend" in "New York"</p>
-           </div>
-        )}
+            </div>
+          )}
 
-        {error && (
-           <div className="h-full flex flex-col items-center justify-center text-red-500">
-              <AlertCircle className="w-12 h-12 mb-2" />
-              <p>{error}</p>
-           </div>
-        )}
-
-        {results.length > 0 && (
-          <div className="h-full max-w-7xl mx-auto flex">
-            
-            {/* Left Column: List */}
-            <div className="w-full md:w-[45%] lg:w-[40%] h-full overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-vexo-card pb-20">
-               <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-                  {results.length} results found
-               </div>
-               
-               {results.map((job, idx) => (
-                 <div 
-                   key={idx}
-                   onClick={() => setSelectedJob(job)}
-                   className={`p-4 border-b border-slate-100 dark:border-slate-700 cursor-pointer transition-colors group relative
-                     ${selectedJob?.job_url === job.job_url 
-                        ? 'bg-[#EBF4FE] dark:bg-[#1C324A]' 
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                     }
-                   `}
-                 >
-                    {/* Blue bar for selected */}
-                    {selectedJob?.job_url === job.job_url && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#0A66C2]"></div>
-                    )}
-
-                    <div className="flex gap-3">
-                       <div className="w-12 h-12 bg-slate-100 rounded-sm flex items-center justify-center shrink-0 overflow-hidden">
+          {filteredResults.length > 0 && (
+            <table className="w-full text-left text-sm border-collapse min-w-[1300px]">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800">
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-8">Company</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Role</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Location</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Type</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Posted</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Salary</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4 text-center">Easy Apply</th>
+                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4 text-center">Link</th>
+                  <th className="py-4 w-12 pr-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                {filteredResults.map((job, idx) => (
+                  <tr
+                    key={idx}
+                    data-job-row
+                    onClick={() => setSelectedJob(job)}
+                    className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer ${selectedJob?.job_url === job.job_url ? 'bg-slate-50 dark:bg-slate-800/50' : ''}`}
+                  >
+                    {/* Company */}
+                    <td className="py-5 px-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                           {job.companyLogo ? (
-                             <img src={job.companyLogo} alt="" className="w-full h-full object-contain" />
+                            <img src={job.companyLogo} alt="" className="w-full h-full object-contain" />
                           ) : (
-                             <Building2 className="w-6 h-6 text-slate-400" />
+                            <Building2 className="w-5 h-5 text-slate-400" />
                           )}
-                       </div>
-                       <div className="flex-1 min-w-0">
-                          <h3 className="text-[#0A66C2] font-semibold text-base leading-tight mb-1 group-hover:underline truncate">
-                            {job.job_title}
-                          </h3>
-                          <div className="text-slate-900 dark:text-white text-sm mb-0.5 truncate">{job.company}</div>
-                          <div className="text-slate-500 dark:text-slate-400 text-sm mb-1 truncate">
-                             {job.location} {job.work_type ? `(${job.work_type})` : ''}
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-y-1 gap-x-2 text-xs text-slate-500 dark:text-slate-400 mt-2">
-                             {job.posted_at && (
-                               <span className="text-green-700 dark:text-green-400 font-medium">
-                                 {job.posted_at}
-                               </span>
-                             )}
-                             {job.is_promoted && (
-                               <span className="text-slate-400">Promoted</span>
-                             )}
-                             {job.is_easy_apply && (
-                                <span className="flex items-center gap-0.5 text-[#0A66C2] font-bold">
-                                  <img src="https://static.licdn.com/aero-v1/sc/h/kh6i06k21lo064v304e29780" className="w-3 h-3" alt="" />
-                                  Easy Apply
-                                </span>
-                             )}
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-               ))}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-slate-900 dark:text-white group-hover:text-[#FF6B00] transition-colors flex items-center gap-1">
+                            {job.company}
+                            {job.is_verified && <CheckCircle2 className="w-3 h-3 text-blue-500" />}
+                          </span>
+                          {job.applicant_count > 0 && (
+                            <span className="text-xs text-slate-400">{job.applicant_count} applicants</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Role */}
+                    <td className="py-5 px-4">
+                      <span className="text-sm font-medium text-slate-900 dark:text-white">{job.job_title}</span>
+                    </td>
+
+                    {/* Location */}
+                    <td className="py-5 px-4">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{job.location || '-'}</span>
+                    </td>
+
+                    {/* Type */}
+                    <td className="py-5 px-4">
+                      {job.work_type ? (
+                        <span className="inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-md">
+                          {job.work_type}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+
+                    {/* Posted */}
+                    <td className="py-5 px-4">
+                      <span className="text-xs text-green-600 dark:text-green-400 font-medium">{job.posted_at || '-'}</span>
+                    </td>
+
+                    {/* Salary */}
+                    <td className="py-5 px-4">
+                      {job.salary ? (
+                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{job.salary}</span>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+
+                    {/* Easy Apply */}
+                    <td className="py-5 px-4 text-center">
+                      {job.is_easy_apply ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-[#FF6B00] font-bold">
+                          <Zap className="w-3 h-3" />
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+
+                    {/* Link */}
+                    <td className="py-5 px-4 text-center">
+                      {job.job_url && (
+                        <a
+                          href={job.job_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-[#FF6B00] hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                    </td>
+
+                    {/* Action */}
+                    <td className="py-5 pr-8">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAnalyzeJob(job);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 px-3 py-1.5 bg-[#FF6B00] text-white text-xs font-medium rounded-md hover:bg-[#E66000] transition-all flex items-center gap-1"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Create CV
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Right Sidebar - Job Details */}
+      {selectedJob && (
+        <div
+          ref={sidebarRef}
+          className="fixed top-0 right-0 w-[600px] h-full bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col z-40 animate-in slide-in-from-right-5 duration-300"
+        >
+          {/* Sidebar Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center overflow-hidden">
+                {selectedJob.companyLogo ? (
+                  <img src={selectedJob.companyLogo} alt="" className="w-full h-full object-contain" />
+                ) : (
+                  <Building2 className="w-6 h-6 text-slate-400" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{selectedJob.job_title}</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  {selectedJob.company}
+                  {selectedJob.is_verified && <CheckCircle2 className="w-3 h-3 text-blue-500" />}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedJob(null)}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+            <button
+              onClick={() => onAnalyzeJob(selectedJob)}
+              className="flex-1 px-4 py-2.5 bg-[#FF6B00] hover:bg-[#E66000] text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm shadow-orange-500/20"
+            >
+              <FileText className="w-4 h-4" />
+              Create CV
+            </button>
+            <button className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+              Save
+            </button>
+            <button className="p-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Job Meta */}
+          <div className="grid grid-cols-2 gap-4 px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-600 dark:text-slate-300">{selectedJob.location || 'Not specified'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-600 dark:text-slate-300">{selectedJob.work_type || 'Not specified'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-green-600 dark:text-green-400">{selectedJob.posted_at || 'Recently'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-600 dark:text-slate-300">
+                {selectedJob.applicant_count ? `${selectedJob.applicant_count} applicants` : 'Be first to apply'}
+              </span>
+            </div>
+            {selectedJob.salary && (
+              <div className="flex items-center gap-2 col-span-2">
+                <Zap className="w-4 h-4 text-orange-500" />
+                <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{selectedJob.salary}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            {/* About the job */}
+            <div className="mb-6">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">About the job</h3>
+              <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                {selectedJob.description || 'No description available.'}
+              </div>
             </div>
 
-            {/* Right Column: Details */}
-            <div className="hidden md:block flex-1 h-full overflow-y-auto bg-white dark:bg-vexo-card pb-20">
-               {selectedJob ? (
-                 <div className="animate-in fade-in duration-300">
-                    
-                    {/* Details Header */}
-                    <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                       <div className="flex items-start justify-between mb-4">
-                           {/* Job Title & Meta */}
-                           <div>
-                              <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2 leading-snug">
-                                {selectedJob.job_title}
-                              </h1>
-                              
-                              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-900 dark:text-white mb-4">
-                                  <span className="font-medium hover:underline cursor-pointer flex items-center gap-1">
-                                    {selectedJob.company}
-                                    {selectedJob.is_verified && <CheckCircle2 className="w-3 h-3 text-blue-500" />}
-                                  </span>
-                                  <span className="text-slate-400">•</span>
-                                  <span className="text-slate-500 dark:text-slate-400">{selectedJob.location}</span>
-                                  <span className="text-slate-400">•</span>
-                                  <span className="text-green-600 dark:text-green-400">{selectedJob.posted_at}</span>
-                                  <span className="text-slate-400">•</span>
-                                  <span className="text-slate-500 dark:text-slate-400">
-                                    {selectedJob.applicant_count ? `${selectedJob.applicant_count} applicants` : 'Be the first to apply'}
-                                  </span>
-                              </div>
+            {/* Job Insights */}
+            {selectedJob.job_insights && selectedJob.job_insights.length > 0 && (
+              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
+                <h3 className="font-bold text-slate-900 dark:text-white mb-3 text-sm">Job Insights</h3>
+                <ul className="space-y-2">
+                  {selectedJob.job_insights.map((insight, i) => (
+                    <li key={i} className="text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2">
+                      <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00] shrink-0"></div>
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-                              {/* Promoted Label */}
-                              {selectedJob.is_promoted && (
-                                <div className="flex items-center gap-1 text-xs text-slate-500 mb-4">
-                                   <Briefcase className="w-3 h-3" />
-                                   <span>Promoted by hirer</span>
-                                </div>
-                              )}
-
-                              {/* Chips: Remote, Full-time, etc */}
-                              <div className="flex flex-wrap gap-2 mb-6">
-                                  {selectedJob.work_type && (
-                                    <span className="inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-md">
-                                       <Briefcase className="w-3 h-3 mr-1" />
-                                       {selectedJob.work_type}
-                                    </span>
-                                  )}
-                                  {selectedJob.salary && (
-                                    <span className="inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-md">
-                                       <Zap className="w-3 h-3 mr-1 text-orange-500" />
-                                       {selectedJob.salary}
-                                    </span>
-                                  )}
-                              </div>
-
-                              {/* Action Buttons */}
-                              <div className="flex items-center gap-3">
-                                 {/* Primary Action - CREATE CV */}
-                                 <button 
-                                    onClick={() => onAnalyzeJob(selectedJob)}
-                                    className="px-6 py-2 bg-[#0A66C2] hover:bg-[#004182] text-white font-bold rounded-full flex items-center gap-2 transition-colors shadow-sm"
-                                 >
-                                    <FileText className="w-4 h-4" />
-                                    Create CV
-                                 </button>
-                                 
-                                 <button className="px-6 py-2 border border-[#0A66C2] text-[#0A66C2] font-bold rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
-                                   Save
-                                 </button>
-                                 
-                                 <button className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-                                    <Share2 className="w-5 h-5" />
-                                 </button>
-                              </div>
-
-                           </div>
-
-                           {/* Logo Right */}
-                           <div className="hidden lg:block w-16 h-16 bg-white border border-slate-100 shadow-sm rounded-lg flex items-center justify-center">
-                              {selectedJob.companyLogo ? (
-                                 <img src={selectedJob.companyLogo} alt={selectedJob.company} className="w-12 h-12 object-contain" />
-                              ) : (
-                                 <Building2 className="w-8 h-8 text-slate-400" />
-                              )}
-                           </div>
-                       </div>
-                    </div>
-
-                    {/* Content Scroll Area */}
-                    <div className="p-6">
-                       
-                       {/* About the job */}
-                       <div className="mb-8">
-                          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">About the job</h2>
-                          <div className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
-                            {selectedJob.description}
-                          </div>
-                       </div>
-
-                       {/* Insights (if any) */}
-                       {selectedJob.job_insights && selectedJob.job_insights.length > 0 && (
-                          <div className="mb-8 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
-                             <h3 className="font-bold text-slate-900 dark:text-white mb-3 text-sm">Job Insights</h3>
-                             <ul className="space-y-2">
-                               {selectedJob.job_insights.map((insight, i) => (
-                                 <li key={i} className="text-sm text-slate-600 dark:text-slate-300 flex items-start gap-2">
-                                   <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></div>
-                                   {insight}
-                                 </li>
-                               ))}
-                             </ul>
-                          </div>
-                       )}
-
-                       {/* About Company */}
-                       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-                          <h3 className="font-bold text-slate-900 dark:text-white mb-4">About the company</h3>
-                          <div className="flex items-center gap-4 mb-4">
-                             <div className="w-12 h-12 bg-white border border-slate-100 rounded-lg flex items-center justify-center shrink-0">
-                                <Building2 className="w-6 h-6 text-slate-400" />
-                             </div>
-                             <div>
-                                <div className="font-bold text-slate-900 dark:text-white">{selectedJob.company}</div>
-                                {selectedJob.applicant_count > 0 && (
-                                   <div className="text-xs text-slate-500">{selectedJob.applicant_count} current applicants</div>
-                                )}
-                             </div>
-                             {selectedJob.company_url && (
-                                <a 
-                                  href={selectedJob.company_url} 
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="ml-auto text-[#0A66C2] font-bold text-sm hover:underline flex items-center gap-1"
-                                >
-                                  Follow <ArrowRight className="w-4 h-4" />
-                                </a>
-                             )}
-                          </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
-                             {selectedJob.company} is hiring for this position. Click follow to get updates on future roles.
-                          </p>
-                       </div>
-
-                    </div>
-                 </div>
-               ) : (
-                 <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 dark:bg-vexo-bg">
-                    <div className="w-20 h-20 bg-white dark:bg-vexo-card rounded-full flex items-center justify-center mb-4 shadow-sm">
-                       <ArrowRight className="w-8 h-8 opacity-20" />
-                    </div>
-                    <p className="font-medium text-lg">Select a job to view details</p>
-                    <p className="text-sm opacity-60">Click on any job from the list on the left</p>
-                 </div>
-               )}
+            {/* About Company */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3 text-sm">About the company</h3>
+              <div className="flex items-center gap-4 mb-3">
+                <div className="w-10 h-10 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                  {selectedJob.companyLogo ? (
+                    <img src={selectedJob.companyLogo} alt="" className="w-8 h-8 object-contain" />
+                  ) : (
+                    <Building2 className="w-5 h-5 text-slate-400" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-sm text-slate-900 dark:text-white">{selectedJob.company}</div>
+                  {selectedJob.applicant_count > 0 && (
+                    <div className="text-xs text-slate-500">{selectedJob.applicant_count} current applicants</div>
+                  )}
+                </div>
+                {selectedJob.company_url && (
+                  <a
+                    href={selectedJob.company_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#FF6B00] font-bold text-xs hover:underline flex items-center gap-1"
+                  >
+                    View <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                {selectedJob.company} is hiring for this position. Click view to learn more about the company.
+              </p>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
