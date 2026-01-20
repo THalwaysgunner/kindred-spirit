@@ -13,10 +13,11 @@ const ACTOR_LINKEDIN_ID = 'apimaestro~linkedin-job-detail';
 const ACTOR_JOB_SEARCH = 'apimaestro~linkedin-jobs-scraper-api';
 const ACTOR_LINKEDIN_PROFILE = 'apimaestro~linkedin-profile-detail';
 
-// Cache duration in hours
+// Cache config
 const CACHE_HOURS = 6;
+const JOBS_PER_API_CALL = 100; // How many jobs we fetch per Apify call
 
-// Generate a hash for search parameters
+// Generate a hash for search parameters (without pagination)
 function generateSearchHash(params: any): string {
   const normalized = {
     keywords: (params.keywords || '').toLowerCase().trim(),
@@ -146,98 +147,126 @@ serve(async (req) => {
         const pageSize = params.pageSize || 20;
         const forceRefresh = params.forceRefresh || false;
 
+        // Calculate which jobs we need
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        
+        // Calculate which API page we need (each API call gets 100 jobs)
+        const neededApiPage = Math.ceil(endIndex / JOBS_PER_API_CALL);
+
         // Generate cache key
         const searchHash = generateSearchHash(params);
-        console.log(`[Cache] Search hash: ${searchHash}`);
+        console.log(`[Cache] Search hash: ${searchHash}, need API page: ${neededApiPage}`);
 
         // Check cache first (unless force refresh)
+        let cached: any = null;
         if (!forceRefresh) {
-          const { data: cached, error: cacheError } = await supabase
+          const { data, error: cacheError } = await supabase
             .from('job_search_cache')
             .select('*')
             .eq('search_hash', searchHash)
             .gt('expires_at', new Date().toISOString())
             .maybeSingle();
 
-          if (cached && !cacheError) {
-            console.log(`[Cache] HIT - Returning ${cached.total_count} cached jobs`);
-            const jobs = cached.jobs as any[];
-            const startIndex = (page - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
-            const paginatedJobs = jobs.slice(startIndex, endIndex);
-            
-            result = {
-              jobs: paginatedJobs,
-              totalCount: cached.total_count,
-              page,
-              pageSize,
-              totalPages: Math.ceil(cached.total_count / pageSize),
-              fromCache: true
-            };
-            break;
+          if (data && !cacheError) {
+            cached = data;
           }
-          console.log('[Cache] MISS - Fetching from Apify');
-        } else {
-          console.log('[Cache] Force refresh requested');
         }
 
-        // Cache miss or force refresh - call Apify
-        const inputPayload = {
-          keywords: params.keywords || "engineer",
-          location: params.location || "United States",
-          page_number: 1,
-          remote: params.remote || "",
-          date_posted: params.date_posted || "",
-          experienceLevel: params.experienceLevel || "",
-          easy_apply: params.easy_apply || "",
-          limit: 100 // Fetch more jobs for caching
-        };
+        let allJobs: any[] = cached?.jobs || [];
+        let fetchedApiPages = cached?.filters?.fetched_api_pages || 0;
+        let hasMoreResults = cached?.filters?.has_more_results !== false; // Default to true
 
-        const allJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
-        const jobsArray = Array.isArray(allJobs) ? allJobs : [];
-        
-        console.log(`[Apify] Fetched ${jobsArray.length} jobs`);
+        console.log(`[Cache] Current state: ${allJobs.length} jobs, ${fetchedApiPages} API pages fetched, hasMore: ${hasMoreResults}`);
 
-        // Store in cache (upsert)
-        const expiresAt = new Date(Date.now() + CACHE_HOURS * 60 * 60 * 1000).toISOString();
-        
-        const { error: upsertError } = await supabase
-          .from('job_search_cache')
-          .upsert({
-            search_hash: searchHash,
-            keywords: params.keywords || '',
-            location: params.location || '',
-            filters: {
-              remote: params.remote || '',
-              date_posted: params.date_posted || '',
-              experienceLevel: params.experienceLevel || '',
-              easy_apply: params.easy_apply || ''
-            },
-            jobs: jobsArray,
-            total_count: jobsArray.length,
-            expires_at: expiresAt
-          }, {
-            onConflict: 'search_hash'
-          });
+        // Check if we need to fetch more jobs
+        const needsMoreJobs = allJobs.length < endIndex && hasMoreResults;
+        const needsFetch = forceRefresh || !cached || needsMoreJobs;
 
-        if (upsertError) {
-          console.error('[Cache] Failed to store results:', upsertError);
-        } else {
-          console.log(`[Cache] Stored ${jobsArray.length} jobs, expires at ${expiresAt}`);
+        if (needsFetch && hasMoreResults) {
+          // Determine which API page to fetch
+          const apiPageToFetch = forceRefresh ? 1 : fetchedApiPages + 1;
+          
+          console.log(`[Apify] Fetching API page ${apiPageToFetch}...`);
+
+          const inputPayload = {
+            keywords: params.keywords || "engineer",
+            location: params.location || "United States",
+            page_number: apiPageToFetch,
+            remote: params.remote || "",
+            date_posted: params.date_posted || "",
+            experienceLevel: params.experienceLevel || "",
+            easy_apply: params.easy_apply || "",
+            limit: JOBS_PER_API_CALL
+          };
+
+          const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+          const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+          
+          console.log(`[Apify] Fetched ${newJobsArray.length} new jobs`);
+
+          // Check if there are more results (if we got less than limit, no more pages)
+          const newHasMore = newJobsArray.length >= JOBS_PER_API_CALL;
+
+          // Merge jobs (for force refresh, replace; otherwise append)
+          if (forceRefresh) {
+            allJobs = newJobsArray;
+            fetchedApiPages = 1;
+          } else {
+            // Deduplicate by job_url before appending
+            const existingUrls = new Set(allJobs.map((j: any) => j.job_url));
+            const uniqueNewJobs = newJobsArray.filter((j: any) => !existingUrls.has(j.job_url));
+            allJobs = [...allJobs, ...uniqueNewJobs];
+            fetchedApiPages = apiPageToFetch;
+          }
+
+          hasMoreResults = newHasMore;
+
+          // Update cache
+          const expiresAt = new Date(Date.now() + CACHE_HOURS * 60 * 60 * 1000).toISOString();
+          
+          const { error: upsertError } = await supabase
+            .from('job_search_cache')
+            .upsert({
+              search_hash: searchHash,
+              keywords: params.keywords || '',
+              location: params.location || '',
+              filters: {
+                remote: params.remote || '',
+                date_posted: params.date_posted || '',
+                experienceLevel: params.experienceLevel || '',
+                easy_apply: params.easy_apply || '',
+                fetched_api_pages: fetchedApiPages,
+                has_more_results: hasMoreResults
+              },
+              jobs: allJobs,
+              total_count: allJobs.length,
+              expires_at: expiresAt
+            }, {
+              onConflict: 'search_hash'
+            });
+
+          if (upsertError) {
+            console.error('[Cache] Failed to store results:', upsertError);
+          } else {
+            console.log(`[Cache] Stored ${allJobs.length} total jobs, ${fetchedApiPages} API pages, hasMore: ${hasMoreResults}`);
+          }
+        } else if (cached) {
+          console.log(`[Cache] HIT - Using ${allJobs.length} cached jobs`);
         }
 
         // Return paginated results
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const paginatedJobs = jobsArray.slice(startIndex, endIndex);
+        const paginatedJobs = allJobs.slice(startIndex, endIndex);
+        const totalAvailable = allJobs.length;
 
         result = {
           jobs: paginatedJobs,
-          totalCount: jobsArray.length,
+          totalCount: totalAvailable,
           page,
           pageSize,
-          totalPages: Math.ceil(jobsArray.length / pageSize),
-          fromCache: false
+          totalPages: Math.ceil(totalAvailable / pageSize),
+          fromCache: !needsFetch,
+          hasMoreResults: hasMoreResults
         };
         break;
       }
