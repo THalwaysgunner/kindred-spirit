@@ -32,15 +32,15 @@ import {
   Maximize2,
   CheckCircle2,
   AlertCircle,
-  TrendingUp,
-  Bot
+  TrendingUp
 } from 'lucide-react';
 
-interface InterviewPrepProps {
+interface ApplicationsListProps {
   applications: Application[];
-  selectedId?: string;
-  isChatOpen: boolean;
-  setIsChatOpen: (open: boolean) => void;
+  profile: UserProfile;
+  onUpdate?: (app: Application) => void;
+  onViewApplication: (app: Application) => void;
+  onImport?: (file: File) => void;
 }
 
 const RenderBlocks = ({ blocks }: { blocks?: DescriptionBlock[] | string }) => {
@@ -75,20 +75,20 @@ const RenderBlocks = ({ blocks }: { blocks?: DescriptionBlock[] | string }) => {
   );
 };
 
-export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, selectedId, isChatOpen, setIsChatOpen }) => {
+export const ApplicationsList: React.FC<ApplicationsListProps> = ({ applications, profile, onViewApplication, onUpdate, onImport }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [appToDownload, setAppToDownload] = useState<Application | null>(null);
   const downloadRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState('All');
   const [openStatusId, setOpenStatusId] = useState<string | null>(null);
   const [isTabsExpanded, setIsTabsExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const mainTabs = ['Overview', 'Roadmap', 'Skills', 'Progress'];
-  const moreTabs = ['Resources', 'Mock Interview', 'Notes'];
+  const mainTabs = ['All', 'New', 'Applying', 'Applied', 'Interview'];
+  const moreTabs = ['Negotiate', 'Accepted', 'Rejected', 'I Withdrew', 'No Response', 'Archived'];
 
   // Sidebar State
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
@@ -119,31 +119,45 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
       meetingFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [isAddingMeeting]);
-
-  // Stats Calculations - STUDY PLAN VERSION
+  // Stats Calculations
   const stats = useMemo(() => {
-    const totalPlans = applications.length;
-    const inProgress = applications.filter(a => a.status === 'Applying' || a.status === 'Interviewing').length;
-    const completed = applications.filter(a => a.status === 'Offer' || a.status === 'Accepted').length;
-    const avgScore = applications.length > 0
-      ? Math.round(applications.reduce((acc, a) => acc + (a.matchScore || 0), 0) / applications.length)
-      : 0;
+    const total = applications.length;
+    const applied = applications.filter(a => a.status === 'Applied').length;
+    const interviewing = applications.filter(a => a.status === 'Interviewing').length;
+    const offers = applications.filter(a => a.status === 'Offer').length;
 
     return [
-      { label: 'Total Plans', value: totalPlans, growth: '12%', trend: 'up' },
-      { label: 'In Progress', value: inProgress, growth: '8%', trend: 'up' },
-      { label: 'Completed', value: completed, growth: '15%', trend: 'up' },
-      { label: 'Avg Score', value: `${avgScore}%`, growth: '5%', trend: 'up' },
+      { label: 'Total Applications', value: total, growth: '12%', trend: 'up' },
+      { label: 'Applied', value: applied, growth: '4.2%', trend: 'up' },
+      { label: 'Interviewing', value: interviewing, growth: '15%', trend: 'up' },
+      { label: 'Offers', value: offers, growth: '2%', trend: 'up' },
     ];
   }, [applications]);
 
   // Filter Logic
   const filteredApps = applications.filter(app => {
+    const matchesTab = (() => {
+      switch (activeTab) {
+        case 'All': return true;
+        case 'New': return app.status === 'Draft';
+        case 'Applying': return app.status === 'Applying' || app.status === 'Draft'; // Keep flexible
+        case 'Applied': return app.status === 'Applied';
+        case 'Interview': return app.status === 'Interviewing';
+        case 'Negotiate': return app.status === 'Negotiating' || app.status === 'Offer';
+        case 'Accepted': return app.status === 'Accepted' || app.status === 'Offer';
+        case 'Rejected': return app.status === 'Rejected';
+        case 'I Withdrew': return app.status === 'I Withdrew';
+        case 'No Response': return app.status === 'No Response';
+        case 'Archived': return app.status === 'Archived';
+        default: return true;
+      }
+    })();
+
     const matchesSearch =
       app.requirements.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.requirements.title.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesSearch;
+    return matchesTab && matchesSearch;
   });
 
   // Close dropdown or sidebar when clicking outside
@@ -182,9 +196,9 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
   };
 
   const handleRowClick = (app: Application) => {
-    console.log('[DEBUG] InterviewPrep handleRowClick called with app:', app);
+    console.log('[DEBUG] ApplicationsList handleRowClick called with app:', app);
     setSelectedApp(app);
-    setSidebarTab('details');
+    setSidebarTab('details'); // Open details/application tab on row click
   };
 
   const handleDirectDownload = (app: Application, e: React.MouseEvent) => {
@@ -197,7 +211,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
         const element = downloadRef.current;
         const opt = {
           margin: 0,
-          filename: `Study_Plan_${app.requirements.company.replace(/\s+/g, '_')}.pdf`,
+          filename: `${profile.name.replace(/\s+/g, '_')}_Resume_${app.requirements.company.replace(/\s+/g, '_')}.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true, letterRendering: true },
           jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
@@ -233,7 +247,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                 <div className="w-1/3 h-10 opacity-30 group-hover:opacity-100 transition-opacity mr-6">
                   <svg viewBox="0 0 100 20" className="w-full h-full text-[#FF6B00] overflow-visible">
                     <defs>
-                      <linearGradient id={`grad-study-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                      <linearGradient id={`grad-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
                         <stop offset="0%" style={{ stopColor: '#FF6B00', stopOpacity: 0.2 }} />
                         <stop offset="100%" style={{ stopColor: '#FF6B00', stopOpacity: 0 }} />
                       </linearGradient>
@@ -248,7 +262,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     />
                     <path
                       d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8 V 20 H 0 Z"
-                      fill={`url(#grad-study-${i})`}
+                      fill={`url(#grad-${i})`}
                     />
                   </svg>
                 </div>
@@ -313,20 +327,31 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
           </div>
 
           <div className="flex items-center gap-3">
-            <button className="px-4 py-2 text-slate-600 dark:text-slate-300 text-xs tracking-wider border border-transparent rounded-md flex items-center gap-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-orange-500 hover:text-orange-500">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 text-slate-600 dark:text-slate-300 text-xs tracking-wider border border-transparent rounded-md flex items-center gap-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-orange-500 hover:text-orange-500"
+            >
               <Upload className="w-4 h-4 text-slate-400 group-hover:text-orange-500 transition-colors" />
               Import
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept=".pdf,.txt,image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0] && onImport) {
+                    onImport(e.target.files[0]);
+                  }
+                }}
+              />
             </button>
             <button className="px-4 py-2 text-slate-600 dark:text-slate-300 text-xs tracking-wider border border-transparent rounded-md flex items-center gap-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-orange-500 hover:text-orange-500">
               <Download className="w-4 h-4 text-slate-400 group-hover:text-orange-500 transition-colors" />
               Export
             </button>
-            <button
-              onClick={() => setIsChatOpen(!isChatOpen)}
-              className="px-5 py-2.5 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2"
-            >
-              <Bot className="w-4 h-4 stroke-[2]" />
-              Open Coach
+            <button className="px-5 py-2.5 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2">
+              <Plus className="w-4 h-4 stroke-[3]" />
+              Add Application
             </button>
           </div>
         </div>
@@ -346,7 +371,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                 </th>
                 <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Company</th>
                 <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Role</th>
-                <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Created</th>
+                <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Applied</th>
                 <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Location</th>
                 <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Level</th>
                 <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Type</th>
@@ -360,13 +385,12 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
               {filteredApps.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-20 text-center text-slate-400 text-xs italic tracking-wider">No study plans found</td>
+                  <td colSpan={12} className="py-20 text-center text-slate-400 text-xs italic tracking-wider">No applications found</td>
                 </tr>
               ) : filteredApps.map((app, idx) => (
                 <tr
                   key={app.id}
-                  onClick={() => handleRowClick(app)}
-                  className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer ${selectedIds.includes(app.id) ? 'bg-[#FFF0E6]/30 dark:bg-orange-950/10' : ''} ${selectedApp?.id === app.id ? 'bg-slate-50 dark:bg-slate-800/50' : ''}`}
+                  className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.includes(app.id) ? 'bg-[#FFF0E6]/30 dark:bg-orange-950/10' : ''} ${selectedApp?.id === app.id ? 'bg-slate-50 dark:bg-slate-800/50' : ''}`}
                 >
                   <td className="py-5 w-12 pl-8" onClick={(e) => { e.stopPropagation(); toggleSelectRow(app.id, e as any); }}>
                     <div
@@ -421,6 +445,14 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                         >
                           <ExternalLink className="w-4 h-4 stroke-[1.5]" />
                         </a>
+                      ) : app.jobText ? (
+                        <button
+                          className="p-1.5 text-slate-300 hover:text-[#FF6B00] transition-colors"
+                          onClick={(e) => { e.stopPropagation(); handleRowClick(app); }}
+                          title="Preview Job Description"
+                        >
+                          <Eye className="w-4 h-4 stroke-[1.5]" />
+                        </button>
                       ) : (
                         <span className="text-slate-200">-</span>
                       )}
@@ -430,7 +462,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     <div className="flex items-center justify-center gap-2">
                       <button
                         className="p-1.5 text-slate-300 hover:text-[#5D5FEF] transition-colors"
-                        onClick={(e) => { e.stopPropagation(); handleRowClick(app); }}
+                        onClick={(e) => { e.stopPropagation(); onViewApplication(app); }}
                         title="Preview CV"
                       >
                         <Eye className="w-4 h-4 stroke-[1.5]" />
@@ -470,6 +502,21 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                               key={status}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                const mappedStatus = status === 'New' ? 'Draft' :
+                                  status === 'Interview' ? 'Interviewing' :
+                                    status === 'Negotiate' ? 'Negotiating' : // Fix: Negotiate -> Negotiating (since I added it to types) or Offer? Original was Offer. I'll map to Negotiating now that type exists to be precise, or keep legacy behavior? User said "add". I'll use the new types I added for new items. For old items, I should probably respect how they were mapped or map to the new types if they are better.
+                                      // Actually, 'Negotiate' was mapped to 'Offer' before.
+                                      // 'New' was 'Draft'.
+                                      // 'Accepted' was 'Offer'.
+                                      // 'Rejected' was 'Rejected'.
+                                      // I will map 'New' -> 'Draft'.
+                                      // 'Interview' -> 'Interviewing'.
+                                      // 'Negotiate' -> 'Negotiating'.
+                                      // 'Accepted' -> 'Accepted'.
+                                      // 'Rejected' -> 'Rejected'.
+                                      // New items map to themselves.
+                                      status;
+                                onUpdate?.({ ...app, status: mappedStatus as any });
                                 setOpenStatusId(null);
                               }}
                               className="w-full flex justify-start text-left pl-2 py-2 text-xs text-slate-900 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-orange-500 transition-colors tracking-wider"
@@ -488,13 +535,13 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                           const threshold = i * 5;
                           const isFilled = app.matchScore >= threshold;
 
-                          let barColor = 'bg-slate-200 dark:bg-slate-800';
+                          let barColor = 'bg-slate-200 dark:bg-slate-800'; // Default empty
 
                           if (isFilled) {
-                            if (i <= 5) barColor = 'bg-orange-500';
-                            else if (i <= 10) barColor = 'bg-yellow-400';
-                            else if (i <= 15) barColor = 'bg-lime-400';
-                            else barColor = 'bg-emerald-500';
+                            if (i <= 5) barColor = 'bg-orange-500';       // 1-25%
+                            else if (i <= 10) barColor = 'bg-yellow-400'; // 26-50%
+                            else if (i <= 15) barColor = 'bg-lime-400';   // 51-75%
+                            else barColor = 'bg-emerald-500';             // 76-100%
                           }
 
                           return (
@@ -519,7 +566,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
         </div>
       </div>
 
-      {/* 5. Right Slide-out Sidebar (Study Plan Details) */}
+      {/* 5. Right Slide-out Sidebar (Application Details) */}
       <div ref={sidebarRef} className={`fixed right-0 top-20 bottom-0 w-[600px] bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 shadow-2xl z-40 transition-transform duration-300 transform ${selectedApp ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedApp && (
           <div className="flex flex-col h-full font-sans">
@@ -536,7 +583,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     {selectedApp.requirements?.title || 'View Job'}
                   </a>
                 ) : (
-                  <span className="text-slate-800 dark:text-slate-200">{selectedApp.requirements?.title || 'Study Plan'}</span>
+                  <span className="text-slate-800 dark:text-slate-200">{selectedApp.requirements?.title || 'Job Application'}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -587,9 +634,11 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
 
             {/* Sidebar Body with Padding */}
             <div className="p-6 pb-4">
-              {/* Profile Section */}
+              {/* Profile Section - Exactly like ref */}
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
+                  {/* Circular Logo */}
+                  {/* Logo - No Container */}
                   <div className="w-14 h-14 flex-shrink-0">
                     {selectedApp.requirements.logoUrl ? (
                       <img
@@ -613,7 +662,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                 </div>
               </div>
 
-              {/* Match Badge */}
+              {/* Match Badge - Almost no radius */}
               <div className="inline-flex items-center gap-1.5 mt-5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-[4px]">
                 <span className={`text-xs font-semibold ${selectedApp.matchScore > 75 ? 'text-emerald-500' :
                   selectedApp.matchScore > 50 ? 'text-lime-500' :
@@ -633,7 +682,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     onClick={() => setSidebarTab(tab)}
                     className={`py-5 text-xs tracking-wider border-b-2 transition-all ${sidebarTab === tab ? 'text-orange-500 border-orange-500' : 'text-slate-900 border-transparent hover:text-orange-500'}`}
                   >
-                    {tab === 'details' ? 'Overview' : tab === 'cv' ? 'Resources' : 'Notes'}
+                    {tab === 'details' ? 'Application' : tab === 'cv' ? 'Resume' : 'Follow up'}
                   </button>
                 ))}
               </div>
@@ -641,7 +690,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
               <div className="p-8 space-y-8">
                 {sidebarTab === 'details' && (
                   <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-300">
-                    {/* Header: Role info */}
+                    {/* Header: Role info inside application tab per request */}
                     <div>
                       <h2 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">Position</h2>
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-normal tracking-wider">{selectedApp.requirements?.title}</p>
@@ -651,7 +700,7 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     <section>
                       <h3 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">About The Job</h3>
                       <div className="text-xs text-slate-600 dark:text-slate-300 space-y-4 leading-relaxed font-normal tracking-wider">
-                        <RenderBlocks blocks={selectedApp.description} />
+                        <RenderBlocks blocks={selectedApp.description || selectedApp.jobText || (selectedApp.requirements as any).descriptionSummary || selectedApp.requirements.description} />
                       </div>
                     </section>
 
@@ -663,9 +712,9 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                       </div>
                     </section>
 
-                    {/* Responsibilities */}
+                    {/* What You’ll Do */}
                     <section>
-                      <h3 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">Responsibilities</h3>
+                      <h3 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">What You'll Do</h3>
                       <div className="text-xs text-slate-600 dark:text-slate-300 space-y-4 leading-relaxed font-normal tracking-wider">
                         <RenderBlocks blocks={selectedApp.responsibilities} />
                       </div>
@@ -680,41 +729,766 @@ export const InterviewPrep: React.FC<InterviewPrepProps> = ({ applications, sele
                     </section>
 
                     {/* Nice To Have */}
-                    <section>
-                      <h3 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">Nice To Have</h3>
-                      <div className="text-xs text-slate-600 dark:text-slate-300 space-y-4 leading-relaxed font-normal tracking-wider">
-                        <RenderBlocks blocks={selectedApp.nice_to_have} />
-                      </div>
-                    </section>
+                    {selectedApp.nice_to_have && (
+                      <section>
+                        <h3 className="block text-xs font-bold text-slate-900 dark:text-white mb-2 tracking-wider">Nice To Have</h3>
+                        <div className="text-xs text-slate-600 dark:text-slate-300 space-y-4 leading-relaxed font-normal tracking-wider">
+                          <RenderBlocks blocks={selectedApp.nice_to_have} />
+                        </div>
+                      </section>
+                    )}
                   </div>
                 )}
 
                 {sidebarTab === 'cv' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-white tracking-wider">Study Resources</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Resources for this study plan will appear here.</p>
+                  <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-white dark:bg-slate-900 rounded-lg flex items-center justify-center border border-slate-100 dark:border-slate-700">
+                          <FileText className="w-5 h-5 text-red-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 dark:text-white tracking-wider">{profile.name.replace(/\s+/g, '_')}_Resume.pdf</p>
+                          <p className="text-xs text-slate-500 mt-0.5 font-normal tracking-wider">280KB</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => onViewApplication(selectedApp)}
+                          className="text-xs text-slate-600 dark:text-slate-300 hover:text-orange-500 flex items-center gap-1 font-normal tracking-wider"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Preview
+                        </button>
+                        <button
+                          onClick={(e) => handleDirectDownload(selectedApp, e as any)}
+                          className="text-xs text-slate-600 dark:text-slate-300 hover:text-orange-500 flex items-center gap-1 font-normal tracking-wider"
+                        >
+                          Download
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
                 {sidebarTab === 'followup' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-white tracking-wider">Notes</h3>
-                    <textarea
-                      className="w-full h-40 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all no-scrollbar font-normal tracking-wider"
-                      placeholder="Add your study notes..."
-                      value={selectedApp.notes || ''}
-                      onChange={(e) => {
-                        setSelectedApp({
-                          ...selectedApp,
-                          notes: e.target.value
-                        });
-                      }}
-                    />
+                  <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <section className="space-y-2">
+                      <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-4 tracking-wider">Salary Expectation</h3>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            placeholder="Amount (e.g. 120,000)"
+                            className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                            value={selectedApp.salary_expectation?.amount || ''}
+                            onChange={(e) => {
+                              const updatedApp = {
+                                ...selectedApp,
+                                salary_expectation: {
+                                  ...(selectedApp.salary_expectation || { currency: 'USD' }),
+                                  amount: e.target.value
+                                }
+                              };
+                              setSelectedApp(updatedApp);
+                            }}
+                            onBlur={() => onUpdate?.(selectedApp!)}
+                          />
+                        </div>
+                        <div className="w-28 relative currency-menu-trigger">
+                          <button
+                            onClick={() => setIsCurrencyMenuOpen(!isCurrencyMenuOpen)}
+                            className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent hover:border-orange-500 rounded-md text-xs text-slate-900 dark:text-white outline-none flex items-center justify-between transition-all font-normal tracking-wider"
+                          >
+                            <span className="truncate">{selectedApp.salary_expectation?.currency || 'USD'}</span>
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isCurrencyMenuOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {isCurrencyMenuOpen && (
+                            <div className="absolute left-0 right-0 top-full mt-0.5 bg-white dark:bg-slate-800 rounded-md rounded-t-none shadow-xl border border-slate-100 dark:border-slate-700 border-t-0 py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
+                              {['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'].map((curr) => (
+                                <button
+                                  key={curr}
+                                  onClick={() => {
+                                    const updatedApp = {
+                                      ...selectedApp,
+                                      salary_expectation: {
+                                        ...(selectedApp.salary_expectation || { amount: '' }),
+                                        currency: curr
+                                      }
+                                    };
+                                    onUpdate?.(updatedApp);
+                                    setSelectedApp(updatedApp);
+                                    setIsCurrencyMenuOpen(false);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:text-orange-500 transition-colors font-normal tracking-wider"
+                                >
+                                  {curr}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-2">
+                      <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-4 tracking-wider">Notes</h3>
+                      <textarea
+                        className="w-full h-40 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all no-scrollbar font-normal tracking-wider"
+                        placeholder="Add your notes about this application..."
+                        value={selectedApp.notes || ''}
+                        onChange={(e) => {
+                          setSelectedApp({
+                            ...selectedApp,
+                            notes: e.target.value
+                          });
+                        }}
+                        onBlur={() => onUpdate?.(selectedApp!)}
+                      />
+                    </section>
+
+                    <section className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-0 tracking-wider">Meetings</h3>
+                        <button
+                          onClick={() => {
+                            setIsAddingMeeting(true);
+                            setEditingMeetingId(null);
+                            setNewMeetingData({ title: '', date: '', time: '', description: '', location: '', notes: '' });
+                            setTimeout(() => {
+                              meetingFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 150);
+                          }}
+                          className="w-8 h-8 border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white rounded-md transition-all flex items-center justify-center flex-shrink-0"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(selectedApp.meetings || []).map((meeting) => (
+                          <div key={meeting.id} data-meeting-container={meeting.id}>
+                            {editingMeetingId === meeting.id ? (
+                              <div className="space-y-4 animate-in fade-in duration-200 py-4 relative">
+                                <div className="flex gap-3 items-end">
+                                  <div className="flex-1 space-y-2">
+                                    <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Title</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. Technical Interview"
+                                      className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                                      value={newMeetingData.title}
+                                      onChange={e => setNewMeetingData({ ...newMeetingData, title: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="w-[180px] space-y-2">
+                                    <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Date & Time</label>
+                                    <button
+                                      onClick={() => {
+                                        setTempDate(newMeetingData.date || new Date().toISOString().split('T')[0]);
+                                        setTempTime(newMeetingData.time || '10:00');
+                                        setCalendarMonth(new Date(newMeetingData.date || new Date()));
+                                        setIsDatePickerOpen(true);
+                                      }}
+                                      className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-left text-slate-900 dark:text-white placeholder:text-slate-300 focus:border-orange-500 outline-none transition-all font-normal tracking-wider flex items-center justify-between"
+                                    >
+                                      <span className="truncate">
+                                        {newMeetingData.date ? (
+                                          new Date(newMeetingData.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        ) : 'Select Date'}
+                                        {newMeetingData.time ? ` at ${newMeetingData.time}` : ''}
+                                      </span>
+                                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {isDatePickerOpen && (
+                                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+                                    <div className="bg-white dark:bg-slate-900 rounded-sm shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-[480px] overflow-hidden">
+                                      <div className="flex h-[380px]">
+                                        {/* Calendar Side */}
+                                        <div className="flex-1 p-6 border-r border-slate-100 dark:border-slate-800">
+                                          <div className="flex items-center justify-between mb-6">
+                                            <button
+                                              onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}
+                                              className="p-1 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors"
+                                            >
+                                              <ChevronLeft className="w-4 h-4 text-slate-400" />
+                                            </button>
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white tracking-wider">
+                                              {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                            </h4>
+                                            <button
+                                              onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1))}
+                                              className="p-1 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors"
+                                            >
+                                              <ChevronRight className="w-4 h-4 text-slate-400" />
+                                            </button>
+                                          </div>
+
+                                          <div className="grid grid-cols-7 gap-1 mb-2">
+                                            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => (
+                                              <div key={day} className="text-[10px] font-bold text-slate-400 text-center uppercase tracking-widest">{day}</div>
+                                            ))}
+                                          </div>
+
+                                          <div className="grid grid-cols-7 gap-1">
+                                            {(() => {
+                                              const days = [];
+                                              const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+                                              const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
+
+                                              // Previous month padding
+                                              let prevDays = start.getDay() === 0 ? 6 : start.getDay() - 1;
+                                              const prevMonthEnd = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 0).getDate();
+                                              for (let i = prevDays - 1; i >= 0; i--) {
+                                                days.push(<div key={`prev-${i}`} className="h-8 flex items-center justify-center text-[11px] text-slate-300 dark:text-slate-700">{prevMonthEnd - i}</div>);
+                                              }
+
+                                              // Current month days
+                                              for (let i = 1; i <= end.getDate(); i++) {
+                                                const dateStr = `${calendarMonth.getFullYear()}-${(calendarMonth.getMonth() + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
+                                                const isSelected = tempDate === dateStr;
+                                                const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+                                                days.push(
+                                                  <button
+                                                    key={i}
+                                                    onClick={() => setTempDate(dateStr)}
+                                                    className={`h-8 w-8 flex items-center justify-center text-[11px] rounded-sm transition-all relative ${isSelected ? 'bg-orange-500 text-white font-bold' :
+                                                      'hover:bg-orange-50 dark:hover:bg-orange-950/20 text-slate-600 dark:text-slate-400'
+                                                      }`}
+                                                  >
+                                                    {i}
+                                                    {isToday && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-orange-500 rounded-full" />}
+                                                  </button>
+                                                );
+                                              }
+
+                                              // Next month padding
+                                              const totalDays = days.length;
+                                              for (let i = 1; i <= (42 - totalDays); i++) {
+                                                days.push(<div key={`next-${i}`} className="h-8 flex items-center justify-center text-[11px] text-slate-300 dark:text-slate-700">{i}</div>);
+                                              }
+
+                                              return days;
+                                            })()}
+                                          </div>
+                                        </div>
+
+                                        {/* Time Side */}
+                                        <div className="w-[140px] border-l border-slate-100 dark:border-slate-800 overflow-y-auto no-scrollbar py-4 p-2">
+                                          <div className="space-y-1">
+                                            {(() => {
+                                              const slots = [];
+                                              for (let h = 8; h <= 21; h++) {
+                                                for (let m = 0; m < 60; m += 15) {
+                                                  const hour = h > 12 ? h - 12 : h;
+                                                  const ampm = h >= 12 ? 'PM' : 'AM';
+                                                  const timeVal = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                                                  const label = `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+                                                  const isSelected = tempTime === timeVal;
+
+                                                  slots.push(
+                                                    <button
+                                                      key={timeVal}
+                                                      onClick={() => setTempTime(timeVal)}
+                                                      className={`w-full py-2 px-3 text-[11px] text-left rounded-sm transition-all ${isSelected ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 font-bold border border-orange-200 dark:border-orange-800/50' :
+                                                        'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                      {label}
+                                                    </button>
+                                                  );
+                                                }
+                                              }
+                                              return slots;
+                                            })()}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Footer */}
+                                      <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                        <button
+                                          onClick={() => setIsDatePickerOpen(false)}
+                                          className="px-6 py-2 border border-slate-200 dark:border-slate-700 rounded-sm text-[11px] font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-sm text-[11px] text-slate-900 dark:text-white font-medium flex-1 text-center">
+                                          {tempDate ? new Date(tempDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select Date'}
+                                          {tempTime ? ` at ${tempTime}` : ''}
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            setNewMeetingData({ ...newMeetingData, date: tempDate, time: tempTime });
+                                            setIsDatePickerOpen(false);
+                                          }}
+                                          disabled={!tempDate || !tempTime}
+                                          className="px-8 py-2 bg-orange-500 text-white rounded-sm text-[11px] font-bold hover:bg-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          Apply
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="space-y-2">
+                                  <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Description</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Interview call"
+                                    className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                                    value={newMeetingData.description}
+                                    onChange={e => setNewMeetingData({ ...newMeetingData, description: e.target.value })}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Location / Link</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Google Meet or Address"
+                                    className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                                    value={newMeetingData.location}
+                                    onChange={e => setNewMeetingData({ ...newMeetingData, location: e.target.value })}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Additional Notes</label>
+                                  <textarea
+                                    placeholder="Summary of the meeting..."
+                                    className="w-full h-32 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider no-scrollbar"
+                                    value={newMeetingData.notes}
+                                    onChange={e => setNewMeetingData({ ...newMeetingData, notes: e.target.value })}
+                                  />
+                                </div>
+                                <div className="flex gap-2 justify-end pt-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingMeetingId(null);
+                                      setNewMeetingData({ title: '', date: '', time: '', description: '', location: '', notes: '' });
+                                    }}
+                                    className="px-6 py-2.5 text-xs bg-slate-100 dark:bg-slate-800 border border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-900 dark:hover:bg-white hover:text-white dark:hover:text-slate-900 rounded-[4px] transition-all font-normal tracking-wider"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (!newMeetingData.date || !newMeetingData.description) return;
+
+                                      let updatedMeetings = [...(selectedApp!.meetings || [])];
+                                      if (editingMeetingId) {
+                                        updatedMeetings = updatedMeetings.map(m =>
+                                          m.id === editingMeetingId ? { ...newMeetingData, id: m.id } : m
+                                        );
+                                      } else {
+                                        updatedMeetings.push({
+                                          id: Date.now().toString(),
+                                          ...newMeetingData
+                                        });
+                                      }
+
+                                      const updatedApp = {
+                                        ...selectedApp!,
+                                        meetings: updatedMeetings
+                                      };
+                                      onUpdate?.(updatedApp);
+                                      setSelectedApp(updatedApp);
+                                      setIsAddingMeeting(false);
+                                      setEditingMeetingId(null);
+                                      setNewMeetingData({ title: '', date: '', time: '', description: '', location: '', notes: '' });
+                                    }}
+                                    className="px-6 py-2.5 text-xs bg-slate-100 dark:bg-slate-800 border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white rounded-[4px] transition-all font-normal tracking-wider"
+                                  >
+                                    Save Meeting
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="bg-slate-50 dark:bg-slate-800/30 rounded-lg overflow-hidden transition-all border-none">
+                                <button
+                                  onClick={(e) => {
+                                    const isExpanding = expandedMeetingId !== meeting.id;
+                                    setExpandedMeetingId(isExpanding ? meeting.id : null);
+                                    if (isExpanding) {
+                                      const container = e.currentTarget.closest('[data-meeting-container]');
+                                      setTimeout(() => {
+                                        container?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                      }, 150);
+                                    }
+                                  }}
+                                  className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-8 h-8 bg-white dark:bg-slate-900 rounded-sm flex items-center justify-center shadow-sm flex-shrink-0">
+                                      <Calendar className="w-4 h-4 text-orange-500" />
+                                    </div>
+                                    <span className="text-xs font-normal text-slate-900 dark:text-white tracking-wider truncate flex-1 min-w-0">{meeting.title}</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 ml-auto pr-1">
+                                    <span className="text-xs text-slate-900 dark:text-white tracking-wider font-normal flex-shrink-0">
+                                      {meeting.date && (() => {
+                                        const date = new Date(meeting.date + 'T00:00:00');
+                                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).replace(' ', ', ');
+                                      })()}
+                                    </span>
+                                    {meeting.time && (
+                                      <span className="text-xs text-slate-900 dark:text-white tracking-wider font-normal flex-shrink-0">
+                                        {meeting.time}
+                                      </span>
+                                    )}
+                                    <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${expandedMeetingId === meeting.id ? 'rotate-90' : ''}`} />
+                                  </div>
+                                </button>
+
+                                {expandedMeetingId === meeting.id && (
+                                  <div className="px-4 pb-4 pt-0 border-t border-slate-50 dark:border-slate-800/50 space-y-3 bg-slate-50/30 dark:bg-slate-800/20 animate-in slide-in-from-top-1 duration-200">
+                                    {meeting.description && (
+                                      <div className="space-y-2 pt-3">
+                                        <p className="text-xs font-normal text-slate-900 dark:text-white tracking-wider">Description</p>
+                                        <p className="text-xs font-normal text-slate-600 dark:text-slate-300 tracking-wider ">{meeting.description}</p>
+                                      </div>
+                                    )}
+
+                                    {meeting.location && (
+                                      <div className="space-y-2">
+                                        <p className="text-xs font-normal text-slate-900 dark:text-white tracking-wider">Location / Link</p>
+                                        {(() => {
+                                          const isLink = (str: string) => {
+                                            try {
+                                              const url = new URL(str);
+                                              return url.protocol === 'http:' || url.protocol === 'https:';
+                                            } catch (_) {
+                                              return str.includes('www.') || str.includes('google.com') || str.includes('zoom.us') || str.includes('meet.google.com');
+                                            }
+                                          };
+                                          if (isLink(meeting.location)) {
+                                            return (
+                                              <a href={meeting.location.startsWith('http') ? meeting.location : `https://${meeting.location}`} target="_blank" rel="noopener noreferrer" className="text-xs font-normal text-blue-500 hover:underline break-all block tracking-wider">
+                                                {meeting.location}
+                                              </a>
+                                            );
+                                          }
+                                          return <p className="text-xs font-normal text-slate-600 dark:text-slate-300 tracking-wider">{meeting.location}</p>;
+                                        })()}
+                                      </div>
+                                    )}
+
+                                    {meeting.notes && (
+                                      <div className="space-y-2">
+                                        <p className="text-xs font-normal text-slate-900 dark:text-white tracking-wider">Additional Notes</p>
+                                        <p className="text-xs font-normal text-slate-600 dark:text-slate-300 whitespace-pre-wrap tracking-wider">{meeting.notes}</p>
+                                      </div>
+                                    )}
+
+                                    <div className="flex justify-end gap-2 pt-2 pb-1">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const container = e.currentTarget.closest('[data-meeting-container]');
+                                          setEditingMeetingId(meeting.id);
+                                          setExpandedMeetingId(null);
+                                          setIsAddingMeeting(false);
+                                          setNewMeetingData({
+                                            title: meeting.title || '',
+                                            date: meeting.date,
+                                            time: meeting.time,
+                                            description: meeting.description,
+                                            location: meeting.location,
+                                            notes: meeting.notes
+                                          });
+                                          setTimeout(() => {
+                                            container?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          }, 150);
+                                        }}
+                                        className="p-1 px-2 border border-slate-200 dark:border-slate-700 rounded text-slate-400 hover:text-orange-500 hover:border-orange-500 transition-all text-[10px] items-center flex gap-1 font-normal tracking-wider"
+                                      >
+                                        <Pencil className="w-3 h-3" />
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const updatedApp = {
+                                            ...selectedApp!,
+                                            meetings: (selectedApp!.meetings || []).filter(m => m.id !== meeting.id)
+                                          };
+                                          onUpdate?.(updatedApp);
+                                          setSelectedApp(updatedApp);
+                                        }}
+                                        className="p-1 px-2 border border-slate-200 dark:border-slate-700 rounded text-slate-400 hover:text-red-500 hover:border-red-500 transition-all text-[10px] items-center flex gap-1 font-normal tracking-wider"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {isAddingMeeting && !editingMeetingId && (
+                        <div ref={meetingFormRef} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 mt-6 pt-6 border-t border-slate-100 dark:border-slate-800/50 relative">
+                          <div className="flex gap-3 items-end">
+                            <div className="flex-1 space-y-2">
+                              <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Title</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Technical Interview"
+                                className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                                value={newMeetingData.title}
+                                onChange={e => setNewMeetingData({ ...newMeetingData, title: e.target.value })}
+                              />
+                            </div>
+                            <div className="w-[180px] space-y-2">
+                              <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Date & Time</label>
+                              <button
+                                onClick={() => {
+                                  setTempDate(newMeetingData.date || new Date().toISOString().split('T')[0]);
+                                  setTempTime(newMeetingData.time || '10:00');
+                                  setCalendarMonth(new Date(newMeetingData.date || new Date()));
+                                  setIsDatePickerOpen(true);
+                                }}
+                                className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-left text-slate-900 dark:text-white placeholder:text-slate-300 focus:border-orange-500 outline-none transition-all font-normal tracking-wider flex items-center justify-between"
+                              >
+                                <span className="truncate">
+                                  {newMeetingData.date ? (
+                                    new Date(newMeetingData.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                  ) : 'Select Date'}
+                                  {newMeetingData.time ? ` at ${newMeetingData.time}` : ''}
+                                </span>
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {isDatePickerOpen && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+                              <div className="bg-white dark:bg-slate-900 rounded-sm shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-[480px] overflow-hidden">
+                                <div className="flex h-[380px]">
+                                  {/* Calendar Side */}
+                                  <div className="flex-1 p-6 border-r border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center justify-between mb-6">
+                                      <button
+                                        onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}
+                                        className="p-1 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors"
+                                      >
+                                        <ChevronLeft className="w-4 h-4 text-slate-400" />
+                                      </button>
+                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white tracking-wider">
+                                        {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                      </h4>
+                                      <button
+                                        onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1))}
+                                        className="p-1 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors"
+                                      >
+                                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                                      </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-7 gap-1 mb-2">
+                                      {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => (
+                                        <div key={day} className="text-[10px] font-bold text-slate-400 text-center uppercase tracking-widest">{day}</div>
+                                      ))}
+                                    </div>
+
+                                    <div className="grid grid-cols-7 gap-1">
+                                      {(() => {
+                                        const days = [];
+                                        const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+                                        const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
+
+                                        // Previous month padding
+                                        let prevDays = start.getDay() === 0 ? 6 : start.getDay() - 1;
+                                        const prevMonthEnd = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 0).getDate();
+                                        for (let i = prevDays - 1; i >= 0; i--) {
+                                          days.push(<div key={`prev-${i}`} className="h-8 flex items-center justify-center text-[11px] text-slate-300 dark:text-slate-700">{prevMonthEnd - i}</div>);
+                                        }
+
+                                        // Current month days
+                                        for (let i = 1; i <= end.getDate(); i++) {
+                                          const dateStr = `${calendarMonth.getFullYear()}-${(calendarMonth.getMonth() + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
+                                          const isSelected = tempDate === dateStr;
+                                          const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+                                          days.push(
+                                            <button
+                                              key={i}
+                                              onClick={() => setTempDate(dateStr)}
+                                              className={`h-8 w-8 flex items-center justify-center text-[11px] rounded-sm transition-all relative ${isSelected ? 'bg-orange-500 text-white font-bold' :
+                                                'hover:bg-orange-50 dark:hover:bg-orange-950/20 text-slate-600 dark:text-slate-400'
+                                                }`}
+                                            >
+                                              {i}
+                                              {isToday && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-orange-500 rounded-full" />}
+                                            </button>
+                                          );
+                                        }
+
+                                        // Next month padding
+                                        const totalDays = days.length;
+                                        for (let i = 1; i <= (42 - totalDays); i++) {
+                                          days.push(<div key={`next-${i}`} className="h-8 flex items-center justify-center text-[11px] text-slate-300 dark:text-slate-700">{i}</div>);
+                                        }
+
+                                        return days;
+                                      })()}
+                                    </div>
+                                  </div>
+
+                                  {/* Time Side */}
+                                  <div className="w-[140px] border-l border-slate-100 dark:border-slate-800 overflow-y-auto no-scrollbar py-4 p-2">
+                                    <div className="space-y-1">
+                                      {(() => {
+                                        const slots = [];
+                                        for (let h = 8; h <= 21; h++) {
+                                          for (let m = 0; m < 60; m += 15) {
+                                            const hour = h > 12 ? h - 12 : h;
+                                            const ampm = h >= 12 ? 'PM' : 'AM';
+                                            const timeVal = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                                            const label = `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+                                            const isSelected = tempTime === timeVal;
+
+                                            slots.push(
+                                              <button
+                                                key={timeVal}
+                                                onClick={() => setTempTime(timeVal)}
+                                                className={`w-full py-2 px-3 text-[11px] text-left rounded-sm transition-all ${isSelected ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 font-bold border border-orange-200 dark:border-orange-800/50' :
+                                                  'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                  }`}
+                                              >
+                                                {label}
+                                              </button>
+                                            );
+                                          }
+                                        }
+                                        return slots;
+                                      })()}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Footer */}
+                                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                  <button
+                                    onClick={() => setIsDatePickerOpen(false)}
+                                    className="px-6 py-2 border border-slate-200 dark:border-slate-700 rounded-sm text-[11px] font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-sm text-[11px] text-slate-900 dark:text-white font-medium flex-1 text-center">
+                                    {tempDate ? new Date(tempDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select Date'}
+                                    {tempTime ? ` at ${tempTime}` : ''}
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setNewMeetingData({ ...newMeetingData, date: tempDate, time: tempTime });
+                                      setIsDatePickerOpen(false);
+                                    }}
+                                    disabled={!tempDate || !tempTime}
+                                    className="px-8 py-2 bg-orange-500 text-white rounded-sm text-[11px] font-bold hover:bg-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Apply
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Description</label>
+                            <input
+                              type="text"
+                              placeholder="Interview call"
+                              className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                              value={newMeetingData.description}
+                              onChange={e => setNewMeetingData({ ...newMeetingData, description: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Location / Link</label>
+                            <input
+                              type="text"
+                              placeholder="Google Meet or Address"
+                              className="w-full py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider"
+                              value={newMeetingData.location}
+                              onChange={e => setNewMeetingData({ ...newMeetingData, location: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-normal text-slate-900 dark:text-white tracking-wider block">Additional Notes</label>
+                            <textarea
+                              placeholder="Summary of the meeting..."
+                              className="w-full h-32 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-md text-xs text-slate-900 dark:text-white placeholder:text-slate-300 placeholder:text-xs placeholder:tracking-wider focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all font-normal tracking-wider no-scrollbar"
+                              value={newMeetingData.notes}
+                              onChange={e => setNewMeetingData({ ...newMeetingData, notes: e.target.value })}
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end pt-2">
+                            <button
+                              onClick={() => {
+                                setIsAddingMeeting(false);
+                                setEditingMeetingId(null);
+                                setNewMeetingData({ title: '', date: '', time: '', description: '', location: '', notes: '' });
+                              }}
+                              className="px-6 py-2.5 text-xs bg-slate-100 dark:bg-slate-800 border border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-900 dark:hover:bg-white hover:text-white dark:hover:text-slate-900 rounded-[4px] transition-all font-normal tracking-wider"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!newMeetingData.date || !newMeetingData.description) return;
+
+                                let updatedMeetings = [...(selectedApp!.meetings || [])];
+                                if (editingMeetingId) {
+                                  updatedMeetings = updatedMeetings.map(m =>
+                                    m.id === editingMeetingId ? { ...newMeetingData, id: m.id } : m
+                                  );
+                                } else {
+                                  updatedMeetings.push({
+                                    id: Date.now().toString(),
+                                    ...newMeetingData
+                                  });
+                                }
+
+                                const updatedApp = {
+                                  ...selectedApp!,
+                                  meetings: updatedMeetings
+                                };
+                                onUpdate?.(updatedApp);
+                                setSelectedApp(updatedApp);
+                                setIsAddingMeeting(false);
+                                setEditingMeetingId(null);
+                                setNewMeetingData({ title: '', date: '', time: '', description: '', location: '', notes: '' });
+                              }}
+                              className="px-6 py-2.5 text-xs bg-slate-100 dark:bg-slate-800 border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white rounded-[4px] transition-all font-normal tracking-wider"
+                            >
+                              Save Meeting
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
                   </div>
                 )}
               </div>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* 7. Hidden Content for Silent PDF Generation */}
+      <div className="absolute top-[-10000px] left-[-10000px] w-[800px] pointer-events-none">
+        {appToDownload && (
+          <ResumePaper ref={downloadRef} application={appToDownload} profile={profile} />
         )}
       </div>
 
