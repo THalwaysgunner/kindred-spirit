@@ -103,6 +103,24 @@ export type Database = {
           },
         ]
       }
+      content_model_reference: {
+        Row: {
+          description: string
+          element_id: string
+          element_name: string
+        }
+        Insert: {
+          description: string
+          element_id: string
+          element_name: string
+        }
+        Update: {
+          description?: string
+          element_id?: string
+          element_name?: string
+        }
+        Relationships: []
+      }
       education: {
         Row: {
           created_at: string
@@ -141,6 +159,42 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      ete_categories: {
+        Row: {
+          category: number
+          category_description: string
+          element_id: string
+          scale_id: string
+        }
+        Insert: {
+          category: number
+          category_description: string
+          element_id: string
+          scale_id: string
+        }
+        Update: {
+          category?: number
+          category_description?: string
+          element_id?: string
+          scale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ete_categories_element_id_fkey"
+            columns: ["element_id"]
+            isOneToOne: false
+            referencedRelation: "content_model_reference"
+            referencedColumns: ["element_id"]
+          },
+          {
+            foreignKeyName: "ete_categories_scale_id_fkey"
+            columns: ["scale_id"]
+            isOneToOne: false
+            referencedRelation: "scales_reference"
+            referencedColumns: ["scale_id"]
           },
         ]
       }
@@ -266,6 +320,36 @@ export type Database = {
           },
         ]
       }
+      job_zone_reference: {
+        Row: {
+          education: string
+          examples: string
+          experience: string
+          job_training: string
+          job_zone: number
+          name: string
+          svp_range: string
+        }
+        Insert: {
+          education: string
+          examples: string
+          experience: string
+          job_training: string
+          job_zone: number
+          name: string
+          svp_range: string
+        }
+        Update: {
+          education?: string
+          examples?: string
+          experience?: string
+          job_training?: string
+          job_zone?: number
+          name?: string
+          svp_range?: string
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           applicant_count: number | null
@@ -337,6 +421,95 @@ export type Database = {
           work_type?: string | null
         }
         Relationships: []
+      }
+      level_scale_anchors: {
+        Row: {
+          anchor_description: string
+          anchor_value: number
+          element_id: string
+          scale_id: string
+        }
+        Insert: {
+          anchor_description: string
+          anchor_value: number
+          element_id: string
+          scale_id: string
+        }
+        Update: {
+          anchor_description?: string
+          anchor_value?: number
+          element_id?: string
+          scale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "level_scale_anchors_element_id_fkey"
+            columns: ["element_id"]
+            isOneToOne: false
+            referencedRelation: "content_model_reference"
+            referencedColumns: ["element_id"]
+          },
+          {
+            foreignKeyName: "level_scale_anchors_scale_id_fkey"
+            columns: ["scale_id"]
+            isOneToOne: false
+            referencedRelation: "scales_reference"
+            referencedColumns: ["scale_id"]
+          },
+        ]
+      }
+      occupation_data: {
+        Row: {
+          description: string
+          onetsoc_code: string
+          title: string
+        }
+        Insert: {
+          description: string
+          onetsoc_code: string
+          title: string
+        }
+        Update: {
+          description?: string
+          onetsoc_code?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      occupation_level_metadata: {
+        Row: {
+          date_updated: string
+          item: string
+          n: number | null
+          onetsoc_code: string
+          percent: number | null
+          response: string | null
+        }
+        Insert: {
+          date_updated: string
+          item: string
+          n?: number | null
+          onetsoc_code: string
+          percent?: number | null
+          response?: string | null
+        }
+        Update: {
+          date_updated?: string
+          item?: string
+          n?: number | null
+          onetsoc_code?: string
+          percent?: number | null
+          response?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "occupation_level_metadata_onetsoc_code_fkey"
+            columns: ["onetsoc_code"]
+            isOneToOne: false
+            referencedRelation: "occupation_data"
+            referencedColumns: ["onetsoc_code"]
+          },
+        ]
       }
       onet_import_jobs: {
         Row: {
@@ -439,6 +612,27 @@ export type Database = {
           profile_picture_url?: string | null
           summary?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      scales_reference: {
+        Row: {
+          maximum: number
+          minimum: number
+          scale_id: string
+          scale_name: string
+        }
+        Insert: {
+          maximum: number
+          minimum: number
+          scale_id: string
+          scale_name: string
+        }
+        Update: {
+          maximum?: number
+          minimum?: number
+          scale_id?: string
+          scale_name?: string
         }
         Relationships: []
       }
