@@ -19,6 +19,7 @@ export interface JobSearchResponse {
   pageSize: number;
   totalPages: number;
   fromCache: boolean;
+  hasMoreResults: boolean;
 }
 
 /**
@@ -60,7 +61,8 @@ export const ApifyService = {
         page: 1,
         pageSize: data.length,
         totalPages: 1,
-        fromCache: false
+        fromCache: false,
+        hasMoreResults: false
       };
     }
     
