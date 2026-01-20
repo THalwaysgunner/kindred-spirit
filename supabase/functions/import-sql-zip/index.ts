@@ -164,10 +164,12 @@ serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let jobId: string | null = null;
+  
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
-    const jobId = formData.get('jobId') as string | null;
+    jobId = formData.get('jobId') as string | null;
 
     if (!file) {
       throw new Error('No file uploaded');
@@ -189,8 +191,13 @@ serve(async (req) => {
     const zip = new JSZip();
     await zip.loadAsync(arrayBuffer);
 
-    const sqlFiles = Object.keys(zip.files).filter(name => name.endsWith('.sql') && !zip.files[name].dir);
-    console.log(`[Import] Found ${sqlFiles.length} SQL files`);
+    // Find ALL .sql files including in subdirectories
+    const sqlFiles = Object.keys(zip.files).filter(name => {
+      const lowerName = name.toLowerCase();
+      return (lowerName.endsWith('.sql') || lowerName.endsWith('.txt')) && !zip.files[name].dir;
+    });
+    console.log(`[Import] Found ${sqlFiles.length} SQL/TXT files`);
+    console.log(`[Import] Files: ${sqlFiles.slice(0, 10).join(', ')}${sqlFiles.length > 10 ? '...' : ''}`);
 
     if (sqlFiles.length === 0) {
       throw new Error('No .sql files found in ZIP');
@@ -382,12 +389,12 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('[Import Error]:', error);
 
-    if (formData?.get('jobId')) {
+    if (jobId) {
       await supabase.from('onet_import_jobs').update({
         status: 'failed',
         finished_at: new Date().toISOString(),
         last_message: `Error: ${error.message}`
-      }).eq('id', formData.get('jobId'));
+      }).eq('id', jobId);
     }
 
     return new Response(JSON.stringify({ error: error.message }), {
