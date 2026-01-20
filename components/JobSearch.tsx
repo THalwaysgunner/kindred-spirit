@@ -391,7 +391,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           )}
         </div>
 
-        {/* 3. Search Toolbar Row */}
+        {/* 3. Search Toolbar Row - API parameters */}
         <div className="flex items-center justify-between px-8 py-5 w-full min-w-[1200px]">
           <div className="flex items-center gap-4 shrink-0">
             <div className="relative group w-80 min-w-80">
@@ -416,11 +416,88 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            {/* API Search Filters */}
+            <div ref={remoteDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'remote' ? null : 'remote')}
+                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+              >
+                <span className="whitespace-nowrap">{getOptionLabel(remoteOptions, filters.remote)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+
+              {openDropdown === 'remote' && (
+                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                  {remoteOptions.map((opt) => {
+                    const selected = opt.value === filters.remote;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFilters({ ...filters, remote: opt.value });
+                          setOpenDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div ref={experienceDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
+                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+              >
+                <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+
+              {openDropdown === 'experience' && (
+                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                  {experienceOptions.map((opt) => {
+                    const selected = opt.value === filters.experienceLevel;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFilters({ ...filters, experienceLevel: opt.value });
+                          setOpenDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <button
               onClick={() => handleSearch(1)}
               disabled={loading}
-              className="px-5 py-2.5 min-w-32 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+              className="px-5 py-2.5 min-w-32 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 stroke-[3]" />}
               Search Jobs
