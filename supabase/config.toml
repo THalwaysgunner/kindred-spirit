@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.cleanup-jobs]
 verify_jwt = false
+
+[functions.import-sql-zip]
+verify_jwt = false
