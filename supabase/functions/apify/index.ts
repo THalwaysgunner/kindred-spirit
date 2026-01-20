@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,22 @@ const ACTOR_CRAWLER = 'apify~website-content-crawler';
 const ACTOR_LINKEDIN_ID = 'apimaestro~linkedin-job-detail';
 const ACTOR_JOB_SEARCH = 'apimaestro~linkedin-jobs-scraper-api';
 const ACTOR_LINKEDIN_PROFILE = 'apimaestro~linkedin-profile-detail';
+
+// Cache duration in hours
+const CACHE_HOURS = 6;
+
+// Generate a hash for search parameters
+function generateSearchHash(params: any): string {
+  const normalized = {
+    keywords: (params.keywords || '').toLowerCase().trim(),
+    location: (params.location || '').toLowerCase().trim(),
+    remote: params.remote || '',
+    date_posted: params.date_posted || '',
+    experienceLevel: params.experienceLevel || '',
+    easy_apply: params.easy_apply || '',
+  };
+  return btoa(JSON.stringify(normalized));
+}
 
 async function runActor(actorId: string, inputPayload: any, apiToken: string, returnAllItems = false): Promise<any> {
   const startUrl = `https://api.apify.com/v2/acts/${actorId}/runs?token=${apiToken}`;
@@ -85,6 +102,11 @@ serve(async (req) => {
       throw new Error('APIFY_TOKEN not configured');
     }
 
+    // Initialize Supabase client with service role for cache management
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     const { action, jobInput, inputType, params, profileUrl } = await req.json();
     
     let result;
@@ -120,6 +142,46 @@ serve(async (req) => {
       }
 
       case 'searchJobs': {
+        const page = params.page || 1;
+        const pageSize = params.pageSize || 20;
+        const forceRefresh = params.forceRefresh || false;
+
+        // Generate cache key
+        const searchHash = generateSearchHash(params);
+        console.log(`[Cache] Search hash: ${searchHash}`);
+
+        // Check cache first (unless force refresh)
+        if (!forceRefresh) {
+          const { data: cached, error: cacheError } = await supabase
+            .from('job_search_cache')
+            .select('*')
+            .eq('search_hash', searchHash)
+            .gt('expires_at', new Date().toISOString())
+            .maybeSingle();
+
+          if (cached && !cacheError) {
+            console.log(`[Cache] HIT - Returning ${cached.total_count} cached jobs`);
+            const jobs = cached.jobs as any[];
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedJobs = jobs.slice(startIndex, endIndex);
+            
+            result = {
+              jobs: paginatedJobs,
+              totalCount: cached.total_count,
+              page,
+              pageSize,
+              totalPages: Math.ceil(cached.total_count / pageSize),
+              fromCache: true
+            };
+            break;
+          }
+          console.log('[Cache] MISS - Fetching from Apify');
+        } else {
+          console.log('[Cache] Force refresh requested');
+        }
+
+        // Cache miss or force refresh - call Apify
         const inputPayload = {
           keywords: params.keywords || "engineer",
           location: params.location || "United States",
@@ -128,9 +190,55 @@ serve(async (req) => {
           date_posted: params.date_posted || "",
           experienceLevel: params.experienceLevel || "",
           easy_apply: params.easy_apply || "",
-          limit: 20
+          limit: 100 // Fetch more jobs for caching
         };
-        result = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+
+        const allJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+        const jobsArray = Array.isArray(allJobs) ? allJobs : [];
+        
+        console.log(`[Apify] Fetched ${jobsArray.length} jobs`);
+
+        // Store in cache (upsert)
+        const expiresAt = new Date(Date.now() + CACHE_HOURS * 60 * 60 * 1000).toISOString();
+        
+        const { error: upsertError } = await supabase
+          .from('job_search_cache')
+          .upsert({
+            search_hash: searchHash,
+            keywords: params.keywords || '',
+            location: params.location || '',
+            filters: {
+              remote: params.remote || '',
+              date_posted: params.date_posted || '',
+              experienceLevel: params.experienceLevel || '',
+              easy_apply: params.easy_apply || ''
+            },
+            jobs: jobsArray,
+            total_count: jobsArray.length,
+            expires_at: expiresAt
+          }, {
+            onConflict: 'search_hash'
+          });
+
+        if (upsertError) {
+          console.error('[Cache] Failed to store results:', upsertError);
+        } else {
+          console.log(`[Cache] Stored ${jobsArray.length} jobs, expires at ${expiresAt}`);
+        }
+
+        // Return paginated results
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedJobs = jobsArray.slice(startIndex, endIndex);
+
+        result = {
+          jobs: paginatedJobs,
+          totalCount: jobsArray.length,
+          page,
+          pageSize,
+          totalPages: Math.ceil(jobsArray.length / pageSize),
+          fromCache: false
+        };
         break;
       }
 
@@ -141,6 +249,20 @@ serve(async (req) => {
         };
         const items = await runActor(ACTOR_LINKEDIN_PROFILE, inputPayload, apiToken, true);
         result = Array.isArray(items) && items.length > 0 ? items[0] : null;
+        break;
+      }
+
+      case 'cleanupExpiredCache': {
+        // Cleanup expired cache entries
+        const { error: deleteError, count } = await supabase
+          .from('job_search_cache')
+          .delete()
+          .lt('expires_at', new Date().toISOString());
+
+        if (deleteError) {
+          throw deleteError;
+        }
+        result = { deleted: count || 0 };
         break;
       }
 

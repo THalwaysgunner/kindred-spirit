@@ -39,6 +39,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const dateDropdownRef = useRef<HTMLDivElement>(null);
   const experienceDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [fromCache, setFromCache] = useState(false);
+  const pageSize = 20;
+
   const [filters, setFilters] = useState<SearchFilters>({
     keywords: '',
     location: '',
@@ -72,19 +79,32 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return found?.label ?? options[0]?.label ?? '';
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (page: number = 1, forceRefresh: boolean = false) => {
     if (!filters.keywords && !filters.location) return;
 
     setLoading(true);
     setError(null);
-    setResults([]);
-    setSelectedJob(null);
+    if (page === 1) {
+      setResults([]);
+      setSelectedJob(null);
+    }
 
     try {
-      const jobs = await ApifyService.searchJobs(filters);
-      setResults(jobs);
-      if (jobs.length > 0) {
-        setSelectedJob(jobs[0]);
+      const response = await ApifyService.searchJobs({
+        ...filters,
+        page,
+        pageSize,
+        forceRefresh
+      });
+      
+      setResults(response.jobs);
+      setTotalCount(response.totalCount);
+      setTotalPages(response.totalPages);
+      setCurrentPage(response.page);
+      setFromCache(response.fromCache);
+      
+      if (response.jobs.length > 0 && page === 1) {
+        setSelectedJob(response.jobs[0]);
       }
     } catch (err) {
       setError("Failed to fetch jobs. Please try different keywords or try again later.");
@@ -94,8 +114,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     }
   };
 
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
+      handleSearch(newPage);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSearch();
+    if (e.key === 'Enter') handleSearch(1);
   };
 
   // Filter results based on active tab
@@ -324,7 +350,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             </div>
 
             <button
-              onClick={handleSearch}
+              onClick={() => handleSearch(1)}
               disabled={loading}
               className="px-5 py-2.5 min-w-32 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
             >
@@ -482,6 +508,70 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {/* Pagination Controls */}
+          {totalCount > 0 && (
+            <div className="flex items-center justify-between px-8 py-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalCount)} of {totalCount} jobs
+                </span>
+                {fromCache && (
+                  <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded text-xs font-medium">
+                    Cached
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1 || loading}
+                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        disabled={loading}
+                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
+                          currentPage === pageNum
+                            ? 'bg-[#FF6B00] text-white'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages || loading}
+                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
