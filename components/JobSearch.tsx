@@ -175,29 +175,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                     </div>
                   )}
                 </div>
-
-                <div className="w-1/3 h-10 opacity-30 group-hover:opacity-100 transition-opacity mr-6">
-                  <svg viewBox="0 0 100 20" className="w-full h-full text-[#FF6B00] overflow-visible">
-                    <defs>
-                      <linearGradient id={`grad-search-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" style={{ stopColor: '#FF6B00', stopOpacity: 0.2 }} />
-                        <stop offset="100%" style={{ stopColor: '#FF6B00', stopOpacity: 0 }} />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M0 15 L 10 12 L 20 16 L 30 10 L 40 14 L 50 8 L 60 12 L 70 6 L 80 10 L 90 4 L 100 8 V 20 H 0 Z"
-                      fill={`url(#grad-search-${i})`}
-                    />
-                  </svg>
-                </div>
               </div>
             </div>
           ))}
