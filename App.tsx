@@ -260,6 +260,8 @@ export default function App() {
       else setLoading(false);
     });
 
+    let hasInitialized = false;
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('App: Auth state change:', event, !!session);
       setSession(session);
@@ -268,19 +270,22 @@ export default function App() {
         setShowAuthModal(false);
 
         // Handle events intelligently to avoid resetting user progress
-        if (event === 'SIGNED_IN') {
-          // Explicit login: show loader and go to dashboard
+        if (event === 'SIGNED_IN' && !hasInitialized) {
+          // Only redirect on first explicit login, not on tab refocus
+          hasInitialized = true;
           fetchUserData(session.user.id);
           setView('dashboard');
         } else if (event === 'INITIAL_SESSION') {
           // On boot: only move to dashboard if we are still on landing
+          hasInitialized = true;
           fetchUserData(session.user.id);
           setView(current => current === 'landing' ? 'dashboard' : current);
-        } else if (event === 'TOKEN_REFRESHED') {
-          // Token refreshed in background: sync data silently, preserve view
+        } else if (event === 'TOKEN_REFRESHED' || (event === 'SIGNED_IN' && hasInitialized)) {
+          // Token refreshed or tab refocus: sync data silently, preserve view
           fetchUserData(session.user.id, true);
         }
       } else {
+        hasInitialized = false;
         setProfile(EMPTY_PROFILE);
         setApplications([]);
         setLoading(false);
