@@ -260,10 +260,49 @@ serve(async (req) => {
       }).eq('id', jobId);
     }
 
-    // Read and unzip
-    const arrayBuffer = await file.arrayBuffer();
+    // Read file bytes - use stream to avoid arrayBuffer issues in Deno edge runtime
+    let zipBytes: Uint8Array;
+    try {
+      // Method 1: Try reading via stream (most reliable in Deno)
+      const chunks: Uint8Array[] = [];
+      const reader = file.stream().getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+      zipBytes = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        zipBytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+      console.log(`[Import] Read ${zipBytes.length} bytes via stream`);
+    } catch (streamErr) {
+      // Method 2: Fallback to arrayBuffer
+      console.log(`[Import] Stream read failed, trying arrayBuffer: ${streamErr}`);
+      const ab = await file.arrayBuffer();
+      zipBytes = new Uint8Array(ab);
+      console.log(`[Import] Read ${zipBytes.length} bytes via arrayBuffer`);
+    }
+
+    // Validate we got real data
+    if (zipBytes.length < 100) {
+      throw new Error(`File read produced only ${zipBytes.length} bytes - upload may be corrupted`);
+    }
+
+    // Check for ZIP magic bytes (PK\x03\x04)
+    const magic = zipBytes.slice(0, 4);
+    const isZipMagic = magic[0] === 0x50 && magic[1] === 0x4B && magic[2] === 0x03 && magic[3] === 0x04;
+    console.log(`[Import] ZIP magic bytes: ${Array.from(magic).map(b => b.toString(16).padStart(2, '0')).join(' ')} (valid: ${isZipMagic})`);
+    
+    if (!isZipMagic) {
+      throw new Error(`File does not appear to be a valid ZIP (magic: ${Array.from(magic.slice(0, 4)).map(b => b.toString(16)).join(' ')})`);
+    }
+
     const zip = new JSZip();
-    await zip.loadAsync(arrayBuffer);
+    await zip.loadAsync(zipBytes);
 
     const allEntries = Object.keys(zip.files);
     const topLevelFiles = allEntries.filter((n) => isZipEntryFile(zip, n));
