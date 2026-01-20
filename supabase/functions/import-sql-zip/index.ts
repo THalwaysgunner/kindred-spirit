@@ -8,6 +8,79 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+type ZipWorkFile = {
+  zip: any; // JSZip instance
+  name: string; // entry name inside that zip
+  displayName: string; // friendly name for logs/UI
+};
+
+function isZipEntryFile(zip: any, name: string) {
+  // JSZip marks directories via `.dir`, but this is not always perfectly consistent across runtimes.
+  // Treat trailing '/' as directory as a fallback.
+  const entry = zip.files?.[name];
+  if (!entry) return false;
+  if (entry.dir === true) return false;
+  if (name.endsWith('/')) return false;
+  return true;
+}
+
+function looksLikeSqlTextFile(name: string) {
+  const lower = name.toLowerCase();
+  return /\.(sql|txt)(\.gz)?$/.test(lower);
+}
+
+function looksLikeZipFile(name: string) {
+  return name.toLowerCase().endsWith('.zip');
+}
+
+function summarizeExtensions(fileNames: string[]) {
+  const counts: Record<string, number> = {};
+  for (const n of fileNames) {
+    const lower = n.toLowerCase();
+    const parts = lower.split('/').pop() || lower;
+    const segs = parts.split('.');
+
+    let ext = '(none)';
+    if (segs.length >= 3 && segs[segs.length - 1] === 'gz') {
+      ext = `${segs[segs.length - 2]}.gz`;
+    } else if (segs.length >= 2) {
+      ext = segs[segs.length - 1];
+    }
+
+    counts[ext] = (counts[ext] || 0) + 1;
+  }
+  return counts;
+}
+
+async function maybeGunzipToString(data: Uint8Array): Promise<string> {
+  try {
+    // Web-standard API in modern Deno runtimes
+    // eslint-disable-next-line no-undef
+    if (typeof DecompressionStream !== 'undefined') {
+      // eslint-disable-next-line no-undef
+      const ds = new DecompressionStream('gzip');
+      const stream = new Response(data).body?.pipeThrough(ds);
+      if (!stream) return new TextDecoder().decode(data);
+      const decompressed = new Uint8Array(await new Response(stream).arrayBuffer());
+      return new TextDecoder().decode(decompressed);
+    }
+  } catch (_) {
+    // fallthrough
+  }
+
+  // Fallback: return best-effort decoded bytes (still useful for debugging)
+  return new TextDecoder().decode(data);
+}
+
+async function readZipEntryAsText(zip: any, name: string): Promise<string> {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.gz')) {
+    const bytes = await zip.files[name].async('uint8array');
+    return await maybeGunzipToString(bytes);
+  }
+  return await zip.files[name].async('string');
+}
+
 // Parse SQL statements from file content (handles multiline INSERT)
 function parseStatements(content: string): string[] {
   const statements: string[] = [];
@@ -165,6 +238,7 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   let jobId: string | null = null;
+  let debugLog: string[] = [];
   
   try {
     const formData = await req.formData();
@@ -191,47 +265,107 @@ serve(async (req) => {
     const zip = new JSZip();
     await zip.loadAsync(arrayBuffer);
 
-    // Find ALL .sql files including in subdirectories
-    const sqlFiles = Object.keys(zip.files).filter(name => {
-      const lowerName = name.toLowerCase();
-      return (lowerName.endsWith('.sql') || lowerName.endsWith('.txt')) && !zip.files[name].dir;
-    });
-    console.log(`[Import] Found ${sqlFiles.length} SQL/TXT files`);
-    console.log(`[Import] Files: ${sqlFiles.slice(0, 10).join(', ')}${sqlFiles.length > 10 ? '...' : ''}`);
+    const allEntries = Object.keys(zip.files);
+    const topLevelFiles = allEntries.filter((n) => isZipEntryFile(zip, n));
+    const extSummary = summarizeExtensions(topLevelFiles);
 
-    if (sqlFiles.length === 0) {
-      throw new Error('No .sql files found in ZIP');
+    debugLog = [
+      `--- ZIP INSPECTION ---`,
+      `Entries: ${allEntries.length} (${topLevelFiles.length} files)`,
+      `Extensions: ${Object.entries(extSummary)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(', ') || '(none)'}`,
+      `Sample: ${topLevelFiles.slice(0, 15).join(', ') || '(no files found)'}`,
+    ];
+
+    console.log(`[Import] ${debugLog.join(' | ')}`);
+
+    // Find SQL-like files (supports .sql/.txt and .sql.gz/.txt.gz)
+    let workFiles: ZipWorkFile[] = topLevelFiles
+      .filter(looksLikeSqlTextFile)
+      .map((name) => ({ zip, name, displayName: name }));
+
+    // If none found, try looking inside nested .zip files (some providers ship zip-in-zip)
+    if (workFiles.length === 0) {
+      const innerZips = topLevelFiles.filter(looksLikeZipFile).slice(0, 3);
+      if (innerZips.length > 0) {
+        console.log(`[Import] No SQL files at root; probing nested ZIP(s): ${innerZips.join(', ')}`);
+      }
+
+      for (const innerName of innerZips) {
+        try {
+          const innerBuf = await zip.files[innerName].async('arraybuffer');
+          const innerZip = new JSZip();
+          await innerZip.loadAsync(innerBuf);
+
+          const innerEntries = Object.keys(innerZip.files).filter((n) => isZipEntryFile(innerZip, n));
+          const innerSql = innerEntries.filter(looksLikeSqlTextFile);
+          console.log(`[Import] Nested ZIP ${innerName}: ${innerEntries.length} files, ${innerSql.length} sql/txt`);
+
+          if (innerSql.length > 0) {
+            workFiles = innerSql.map((name) => ({
+              zip: innerZip,
+              name,
+              displayName: `${innerName}::${name}`,
+            }));
+            debugLog.push(`Nested ZIP used: ${innerName} (${innerSql.length} SQL/TXT)`);
+            break;
+          }
+        } catch (e: any) {
+          console.log(`[Import] Failed probing nested ZIP ${innerName}: ${e?.message || e}`);
+        }
+      }
+    }
+
+    console.log(`[Import] Found ${workFiles.length} SQL/TXT(/GZ) file(s)`);
+    if (workFiles.length > 0) {
+      console.log(`[Import] Work files: ${workFiles.slice(0, 10).map(f => f.displayName).join(', ')}${workFiles.length > 10 ? '...' : ''}`);
+    }
+
+    if (workFiles.length === 0) {
+      const msg = `No .sql/.txt (or .gz) files found in ZIP. ${debugLog.join(' | ')}`;
+      if (jobId) {
+        await supabase.from('onet_import_jobs').update({
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          last_message: `Error: No SQL files found (see log)`,
+          log: [...debugLog, '❌ No SQL/TXT files detected.']
+        }).eq('id', jobId);
+      }
+      throw new Error(msg);
     }
 
     if (jobId) {
       await supabase.from('onet_import_jobs').update({
-        files_total: sqlFiles.length,
-        last_message: `Found ${sqlFiles.length} SQL files, starting import...`,
-        log: [`Found ${sqlFiles.length} SQL files`]
+        files_total: workFiles.length,
+        last_message: `Found ${workFiles.length} SQL files, starting import...`,
+        log: [...debugLog, `Found ${workFiles.length} SQL file(s)`]
       }).eq('id', jobId);
     }
 
     let totalTablesCreated = 0;
     let totalRowsInserted = 0;
     let filesProcessed = 0;
-    const logs: string[] = [`Starting import of ${sqlFiles.length} files`];
+    const logs: string[] = [...debugLog, `Starting import of ${workFiles.length} files`];
 
     // Process each SQL file
-    for (const fileName of sqlFiles) {
+    for (const wf of workFiles) {
       const startTime = Date.now();
-      const fileContent = await zip.files[fileName].async('string');
+      const fileContent = await readZipEntryAsText(wf.zip, wf.name);
       const statements = parseStatements(fileContent);
       
-      console.log(`[Import] Processing ${fileName}: ${statements.length} statements`);
-      logs.push(`\n--- ${fileName} (${statements.length} statements) ---`);
+      console.log(`[Import] Processing ${wf.displayName}: ${statements.length} statements`);
+      logs.push(`\n--- ${wf.displayName} (${statements.length} statements) ---`);
 
       if (jobId) {
         await supabase.from('onet_import_jobs').update({
-          current_file: fileName,
+          current_file: wf.displayName,
           current_phase: 'parsing',
           statements_total: statements.length,
           statements_done: 0,
-          last_message: `Processing ${fileName}...`,
+          last_message: `Processing ${wf.displayName}...`,
           log: logs
         }).eq('id', jobId);
       }
@@ -346,7 +480,7 @@ serve(async (req) => {
       }
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      logs.push(`✅ ${fileName}: ${fileTables} tables, ${fileRows} rows (${elapsed}s)`);
+      logs.push(`✅ ${wf.displayName}: ${fileTables} tables, ${fileRows} rows (${elapsed}s)`);
       filesProcessed++;
 
       if (jobId) {
@@ -355,7 +489,7 @@ serve(async (req) => {
           statements_done: stmtsDone,
           rows_inserted: totalRowsInserted,
           tables_created: totalTablesCreated,
-          last_message: `Completed ${fileName}`,
+          last_message: `Completed ${wf.displayName}`,
           log: logs
         }).eq('id', jobId);
       }
@@ -363,7 +497,7 @@ serve(async (req) => {
 
     // Final update
     logs.push(`\n=== IMPORT COMPLETE ===`);
-    logs.push(`📊 Files: ${filesProcessed}/${sqlFiles.length}`);
+    logs.push(`📊 Files: ${filesProcessed}/${workFiles.length}`);
     logs.push(`📋 Tables created: ${totalTablesCreated}`);
     logs.push(`📝 Rows inserted: ${totalRowsInserted}`);
 
