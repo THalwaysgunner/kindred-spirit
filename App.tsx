@@ -669,11 +669,11 @@ export default function App() {
       {view === 'interview-prep' && (
         <button
           onClick={() => setIsChatOpen(!isChatOpen)}
-          className="fixed z-[60] right-0 transition-all duration-300 flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group"
+          className={`fixed z-[60] flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group ${isChatOpen ? 'right-[384px]' : 'right-0'}`}
           style={{
             top: '35%',
-            transform: `translateX(${isChatOpen ? '-384px' : '0'})`,
-            marginTop: '-24px'
+            marginTop: '-24px',
+            transition: 'right 300ms cubic-bezier(0.4, 0, 0.2, 1)'
           }}
           title={isChatOpen ? "Close Study Coach" : "Open Study Coach"}
         >
