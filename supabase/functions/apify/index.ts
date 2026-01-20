@@ -13,21 +13,42 @@ const ACTOR_LINKEDIN_ID = 'apimaestro~linkedin-job-detail';
 const ACTOR_JOB_SEARCH = 'apimaestro~linkedin-jobs-scraper-api';
 const ACTOR_LINKEDIN_PROFILE = 'apimaestro~linkedin-profile-detail';
 
-// Cache config
-const CACHE_HOURS = 6;
-const JOBS_PER_API_CALL = 100; // How many jobs we fetch per Apify call
+// Config
+const JOBS_PER_API_CALL = 100;
+const STALE_HOURS = 24; // Consider data stale after 24 hours
+const MIN_JOBS_THRESHOLD = 50; // Fetch more if we have less than this
 
-// Generate a hash for search parameters (without pagination)
-function generateSearchHash(params: any): string {
-  const normalized = {
-    keywords: (params.keywords || '').toLowerCase().trim(),
-    location: (params.location || '').toLowerCase().trim(),
-    remote: params.remote || '',
-    date_posted: params.date_posted || '',
-    experienceLevel: params.experienceLevel || '',
-    easy_apply: params.easy_apply || '',
-  };
-  return btoa(JSON.stringify(normalized));
+// Parse relative date strings like "2 days ago" into actual timestamps
+function parsePostedDate(postedText: string): Date {
+  const now = new Date();
+  if (!postedText) return now;
+  
+  const text = postedText.toLowerCase();
+  
+  const hoursMatch = text.match(/(\d+)\s*hours?\s*ago/);
+  if (hoursMatch) {
+    return new Date(now.getTime() - parseInt(hoursMatch[1]) * 60 * 60 * 1000);
+  }
+  
+  const daysMatch = text.match(/(\d+)\s*days?\s*ago/);
+  if (daysMatch) {
+    return new Date(now.getTime() - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000);
+  }
+  
+  const weeksMatch = text.match(/(\d+)\s*weeks?\s*ago/);
+  if (weeksMatch) {
+    return new Date(now.getTime() - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000);
+  }
+  
+  const monthsMatch = text.match(/(\d+)\s*months?\s*ago/);
+  if (monthsMatch) {
+    return new Date(now.getTime() - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000);
+  }
+  
+  if (text.includes('just now') || text.includes('today')) return now;
+  if (text.includes('yesterday')) return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  
+  return now;
 }
 
 async function runActor(actorId: string, inputPayload: any, apiToken: string, returnAllItems = false): Promise<any> {
@@ -78,7 +99,6 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
     throw new Error("Apify scrape timed out.");
   }
 
-  // Fetch results
   console.log('[Apify] Run succeeded. Fetching results...');
   const itemsUrl = `https://api.apify.com/v2/datasets/${defaultDatasetId}/items?token=${apiToken}`;
   const itemsRes = await fetch(itemsUrl);
@@ -91,8 +111,159 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
   return Array.isArray(items) && items.length > 0 ? items[0] : null;
 }
 
+// Normalize search term using AI
+async function normalizeSearchTerm(supabase: any, term: string, location: string): Promise<{ canonicalTerm: string; searchTermId: string }> {
+  const normalizedInput = (term || '').toLowerCase().trim();
+  const normalizedLocation = (location || '').toLowerCase().trim();
+
+  // Check if we already have this term
+  const { data: existingTerm } = await supabase
+    .from('search_terms')
+    .select('*')
+    .eq('raw_term', normalizedInput)
+    .eq('location', normalizedLocation)
+    .maybeSingle();
+
+  if (existingTerm) {
+    // Increment search count
+    await supabase
+      .from('search_terms')
+      .update({ 
+        search_count: existingTerm.search_count + 1,
+        last_searched_at: new Date().toISOString()
+      })
+      .eq('id', existingTerm.id);
+
+    return {
+      canonicalTerm: existingTerm.canonical_term,
+      searchTermId: existingTerm.id
+    };
+  }
+
+  // For new terms, try to call normalize-search function, or fallback to the term itself
+  try {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (LOVABLE_API_KEY) {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-lite',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a job title normalizer. Convert the input to a canonical job title. Fix typos, use singular form, lowercase. Return ONLY the job title, nothing else. Examples: "data scientis" -> "data scientist", "sr software eng" -> "senior software engineer"' 
+            },
+            { role: 'user', content: normalizedInput }
+          ],
+          temperature: 0.1,
+          max_tokens: 50
+        }),
+      });
+
+      if (response.ok) {
+        const aiResult = await response.json();
+        const canonicalTerm = aiResult.choices?.[0]?.message?.content?.trim().toLowerCase().replace(/['"]/g, '') || normalizedInput;
+        
+        const { data: newTerm } = await supabase
+          .from('search_terms')
+          .insert({
+            raw_term: normalizedInput,
+            canonical_term: canonicalTerm,
+            location: normalizedLocation,
+            search_count: 1,
+            last_searched_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (newTerm) {
+          return { canonicalTerm, searchTermId: newTerm.id };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[Normalize] AI normalization failed, using raw term');
+  }
+
+  // Fallback: use raw term
+  const { data: newTerm } = await supabase
+    .from('search_terms')
+    .upsert({
+      raw_term: normalizedInput,
+      canonical_term: normalizedInput,
+      location: normalizedLocation,
+      search_count: 1,
+      last_searched_at: new Date().toISOString()
+    }, { onConflict: 'raw_term,location' })
+    .select()
+    .single();
+
+  return {
+    canonicalTerm: normalizedInput,
+    searchTermId: newTerm?.id || ''
+  };
+}
+
+// Store jobs in the database
+async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Promise<number> {
+  let storedCount = 0;
+
+  for (const job of jobs) {
+    if (!job.job_url) continue;
+
+    const postedAt = parsePostedDate(job.posted_time || job.posted_at_text || '');
+    const expiresAt = new Date(postedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const { data: upsertedJob, error } = await supabase
+      .from('jobs')
+      .upsert({
+        job_url: job.job_url,
+        job_id: job.job_id || null,
+        job_title: job.job_title || job.title || 'Unknown',
+        company: job.company || job.company_name || 'Unknown',
+        company_url: job.company_url || null,
+        location: job.location || null,
+        work_type: job.work_type || job.remote || null,
+        salary: job.salary || null,
+        description: job.description || null,
+        requirements: job.requirements || null,
+        benefits: job.benefits || [],
+        skills: job.skills || [],
+        is_easy_apply: job.is_easy_apply || job.easy_apply || false,
+        applicant_count: job.applicant_count || null,
+        posted_at: postedAt.toISOString(),
+        posted_at_text: job.posted_time || job.posted_at_text || null,
+        expires_at: expiresAt.toISOString(),
+        raw_data: job,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'job_url' })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error(`[Store] Error upserting job: ${error.message}`);
+      continue;
+    }
+
+    if (upsertedJob && searchTermId) {
+      await supabase
+        .from('job_search_links')
+        .upsert({
+          job_id: upsertedJob.id,
+          search_term_id: searchTermId
+        }, { onConflict: 'job_id,search_term_id' });
+      storedCount++;
+    }
+  }
+
+  return storedCount;
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -103,7 +274,6 @@ serve(async (req) => {
       throw new Error('APIFY_TOKEN not configured');
     }
 
-    // Initialize Supabase client with service role for cache management
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -146,53 +316,78 @@ serve(async (req) => {
         const page = params.page || 1;
         const pageSize = params.pageSize || 20;
         const forceRefresh = params.forceRefresh || false;
+        const keywords = params.keywords || 'software engineer';
+        const location = params.location || 'United States';
 
-        // Calculate which jobs we need
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
+        console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, forceRefresh: ${forceRefresh}`);
+
+        // Step 1: Normalize the search term
+        const { canonicalTerm, searchTermId } = await normalizeSearchTerm(supabase, keywords, location);
+        console.log(`[Search] Canonical term: "${canonicalTerm}"`);
+
+        // Step 2: Check if we have fresh data
+        const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
         
-        // Calculate which API page we need (each API call gets 100 jobs)
-        const neededApiPage = Math.ceil(endIndex / JOBS_PER_API_CALL);
+        const { data: searchTerm } = await supabase
+          .from('search_terms')
+          .select('*')
+          .eq('id', searchTermId)
+          .single();
 
-        // Generate cache key
-        const searchHash = generateSearchHash(params);
-        console.log(`[Cache] Search hash: ${searchHash}, need API page: ${neededApiPage}`);
+        const isStale = !searchTerm?.last_fetched_at || searchTerm.last_fetched_at < staleThreshold;
 
-        // Check cache first (unless force refresh)
-        let cached: any = null;
-        if (!forceRefresh) {
-          const { data, error: cacheError } = await supabase
-            .from('job_search_cache')
-            .select('*')
-            .eq('search_hash', searchHash)
-            .gt('expires_at', new Date().toISOString())
-            .maybeSingle();
+        // Step 3: Get existing jobs from DB
+        const startIndex = (page - 1) * pageSize;
 
-          if (data && !cacheError) {
-            cached = data;
-          }
+        // Build query for jobs linked to this search term (or similar canonical terms)
+        let jobQuery = supabase
+          .from('jobs')
+          .select(`
+            *,
+            job_search_links!inner(search_term_id)
+          `)
+          .gt('expires_at', new Date().toISOString())
+          .order('posted_at', { ascending: false });
+
+        // Filter by search term
+        if (searchTermId) {
+          // Get all search terms with the same canonical term
+          const { data: relatedTerms } = await supabase
+            .from('search_terms')
+            .select('id')
+            .eq('canonical_term', canonicalTerm);
+
+          const termIds = relatedTerms?.map(t => t.id) || [searchTermId];
+          jobQuery = jobQuery.in('job_search_links.search_term_id', termIds);
         }
 
-        let allJobs: any[] = cached?.jobs || [];
-        let fetchedApiPages = cached?.filters?.fetched_api_pages || 0;
-        let hasMoreResults = cached?.filters?.has_more_results !== false; // Default to true
+        // Apply filters
+        if (params.remote && params.remote !== '') {
+          jobQuery = jobQuery.eq('work_type', params.remote);
+        }
+        if (params.easy_apply === 'true') {
+          jobQuery = jobQuery.eq('is_easy_apply', true);
+        }
 
-        console.log(`[Cache] Current state: ${allJobs.length} jobs, ${fetchedApiPages} API pages fetched, hasMore: ${hasMoreResults}`);
+        const { data: existingJobs, error: jobsError } = await jobQuery;
+        
+        if (jobsError) {
+          console.error('[Search] Error fetching jobs:', jobsError);
+        }
 
-        // Check if we need to fetch more jobs
-        const needsMoreJobs = allJobs.length < endIndex && hasMoreResults;
-        const needsFetch = forceRefresh || !cached || needsMoreJobs;
+        let allJobs = existingJobs || [];
+        console.log(`[Search] Found ${allJobs.length} jobs in DB`);
 
-        if (needsFetch && hasMoreResults) {
-          // Determine which API page to fetch
-          const apiPageToFetch = forceRefresh ? 1 : fetchedApiPages + 1;
-          
-          console.log(`[Apify] Fetching API page ${apiPageToFetch}...`);
+        // Step 4: Decide if we need to fetch from API
+        const needsApiFetch = forceRefresh || isStale || allJobs.length < MIN_JOBS_THRESHOLD;
+
+        if (needsApiFetch) {
+          console.log(`[Search] Fetching from API (stale: ${isStale}, jobs: ${allJobs.length}, force: ${forceRefresh})`);
 
           const inputPayload = {
-            keywords: params.keywords || "engineer",
-            location: params.location || "United States",
-            page_number: apiPageToFetch,
+            keywords: canonicalTerm,
+            location: location,
+            page_number: 1,
             remote: params.remote || "",
             date_posted: params.date_posted || "",
             experienceLevel: params.experienceLevel || "",
@@ -200,73 +395,77 @@ serve(async (req) => {
             limit: JOBS_PER_API_CALL
           };
 
-          const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
-          const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-          
-          console.log(`[Apify] Fetched ${newJobsArray.length} new jobs`);
+          try {
+            const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+            const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+            
+            console.log(`[Search] Fetched ${newJobsArray.length} new jobs from API`);
 
-          // Check if there are more results (if we got less than limit, no more pages)
-          const newHasMore = newJobsArray.length >= JOBS_PER_API_CALL;
+            // Store new jobs
+            const storedCount = await storeJobs(supabase, newJobsArray, searchTermId);
+            console.log(`[Search] Stored ${storedCount} jobs`);
 
-          // Merge jobs (for force refresh, replace; otherwise append)
-          if (forceRefresh) {
-            allJobs = newJobsArray;
-            fetchedApiPages = 1;
-          } else {
-            // Deduplicate by job_url before appending
-            const existingUrls = new Set(allJobs.map((j: any) => j.job_url));
-            const uniqueNewJobs = newJobsArray.filter((j: any) => !existingUrls.has(j.job_url));
-            allJobs = [...allJobs, ...uniqueNewJobs];
-            fetchedApiPages = apiPageToFetch;
+            // Update last_fetched_at
+            await supabase
+              .from('search_terms')
+              .update({ last_fetched_at: new Date().toISOString() })
+              .eq('id', searchTermId);
+
+            // Re-fetch from DB to get deduplicated results
+            const { data: updatedJobs } = await supabase
+              .from('jobs')
+              .select('*')
+              .gt('expires_at', new Date().toISOString())
+              .order('posted_at', { ascending: false });
+
+            // Filter by search term links
+            const { data: linkedJobIds } = await supabase
+              .from('job_search_links')
+              .select('job_id')
+              .in('search_term_id', [searchTermId]);
+
+            const linkedIds = new Set(linkedJobIds?.map(l => l.job_id) || []);
+            allJobs = (updatedJobs || []).filter(j => linkedIds.has(j.id));
+
+          } catch (apiError: any) {
+            console.error('[Search] API fetch failed:', apiError.message);
+            // Continue with existing DB results
           }
-
-          hasMoreResults = newHasMore;
-
-          // Update cache
-          const expiresAt = new Date(Date.now() + CACHE_HOURS * 60 * 60 * 1000).toISOString();
-          
-          const { error: upsertError } = await supabase
-            .from('job_search_cache')
-            .upsert({
-              search_hash: searchHash,
-              keywords: params.keywords || '',
-              location: params.location || '',
-              filters: {
-                remote: params.remote || '',
-                date_posted: params.date_posted || '',
-                experienceLevel: params.experienceLevel || '',
-                easy_apply: params.easy_apply || '',
-                fetched_api_pages: fetchedApiPages,
-                has_more_results: hasMoreResults
-              },
-              jobs: allJobs,
-              total_count: allJobs.length,
-              expires_at: expiresAt
-            }, {
-              onConflict: 'search_hash'
-            });
-
-          if (upsertError) {
-            console.error('[Cache] Failed to store results:', upsertError);
-          } else {
-            console.log(`[Cache] Stored ${allJobs.length} total jobs, ${fetchedApiPages} API pages, hasMore: ${hasMoreResults}`);
-          }
-        } else if (cached) {
-          console.log(`[Cache] HIT - Using ${allJobs.length} cached jobs`);
         }
 
-        // Return paginated results
-        const paginatedJobs = allJobs.slice(startIndex, endIndex);
-        const totalAvailable = allJobs.length;
+        // Step 5: Apply client-side filters and paginate
+        let filteredJobs = allJobs;
+
+        // Transform jobs to match expected format
+        const transformedJobs = filteredJobs.map(job => ({
+          job_url: job.job_url,
+          job_id: job.job_id,
+          job_title: job.job_title,
+          company: job.company,
+          company_url: job.company_url,
+          location: job.location,
+          work_type: job.work_type,
+          salary: job.salary,
+          description: job.description,
+          posted_time: job.posted_at_text,
+          is_easy_apply: job.is_easy_apply,
+          applicant_count: job.applicant_count,
+          // Include raw_data fields for compatibility
+          ...(job.raw_data || {})
+        }));
+
+        // Paginate
+        const paginatedJobs = transformedJobs.slice(startIndex, startIndex + pageSize);
+        const totalCount = transformedJobs.length;
 
         result = {
           jobs: paginatedJobs,
-          totalCount: totalAvailable,
+          totalCount,
           page,
           pageSize,
-          totalPages: Math.ceil(totalAvailable / pageSize),
-          fromCache: !needsFetch,
-          hasMoreResults: hasMoreResults
+          totalPages: Math.ceil(totalCount / pageSize),
+          fromCache: !needsApiFetch,
+          hasMoreResults: totalCount > startIndex + pageSize
         };
         break;
       }
@@ -282,7 +481,7 @@ serve(async (req) => {
       }
 
       case 'cleanupExpiredCache': {
-        // Cleanup expired cache entries
+        // Clean up old cache table
         const { error: deleteError, count } = await supabase
           .from('job_search_cache')
           .delete()
@@ -291,7 +490,14 @@ serve(async (req) => {
         if (deleteError) {
           throw deleteError;
         }
-        result = { deleted: count || 0 };
+
+        // Also clean up expired jobs
+        const { count: jobsDeleted } = await supabase
+          .from('jobs')
+          .delete()
+          .lt('expires_at', new Date().toISOString());
+
+        result = { deleted: (count || 0) + (jobsDeleted || 0) };
         break;
       }
 
