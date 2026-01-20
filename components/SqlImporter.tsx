@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Play, CheckCircle2, XCircle, Loader2, FileArchive, Database, Table2, Rows3 } from 'lucide-react';
+import { Play, CheckCircle2, XCircle, Loader2, FileText, Database, Table2, Rows3 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
 interface ImportJob {
@@ -20,7 +20,7 @@ interface ImportJob {
 }
 
 export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,17 +54,27 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
   }, [job?.log]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected && selected.name.endsWith('.zip')) {
-      setFile(selected);
-      setError(null);
-    } else {
-      setError('Please select a .zip file');
+    const selected = e.target.files;
+    if (!selected || selected.length === 0) return;
+
+    const sqlFiles = Array.from(selected).filter(f => 
+      f.name.endsWith('.sql') || f.name.endsWith('.txt')
+    );
+
+    if (sqlFiles.length === 0) {
+      setError('Please select .sql or .txt files');
+      return;
     }
+
+    // Sort by filename (01_, 02_, etc.)
+    sqlFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    
+    setFiles(sqlFiles);
+    setError(null);
   };
 
   const handleImport = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
 
     setIsUploading(true);
     setError(null);
@@ -76,7 +86,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
         .insert({
           user_id: userId,
           status: 'queued',
-          last_message: 'Uploading file...'
+          last_message: 'Uploading files...'
         })
         .select()
         .single();
@@ -84,10 +94,13 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
       if (jobError) throw jobError;
       setJob(newJob);
 
-      // Upload to edge function
+      // Upload all files
       const formData = new FormData();
-      formData.append('file', file);
       formData.append('jobId', newJob.id);
+      
+      files.forEach((file, index) => {
+        formData.append(`file${index}`, file);
+      });
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -105,8 +118,6 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
         throw new Error(errData.error || 'Import failed');
       }
 
-      const result = await response.json();
-      
       // Fetch final job state
       const { data: finalJob } = await supabase
         .from('onet_import_jobs')
@@ -157,8 +168,8 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
           <Database className="w-5 h-5 text-indigo-500" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">SQL ZIP Importer</h2>
-          <p className="text-sm text-slate-500">Upload a ZIP with .sql files to batch import</p>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">SQL File Importer</h2>
+          <p className="text-sm text-slate-500">Upload multiple .sql files to import in order</p>
         </div>
       </div>
 
@@ -169,16 +180,19 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 transition-colors"
           >
-            <FileArchive className="w-12 h-12 mx-auto text-slate-400 mb-3" />
-            {file ? (
+            <FileText className="w-12 h-12 mx-auto text-slate-400 mb-3" />
+            {files.length > 0 ? (
               <div>
-                <p className="font-medium text-slate-900 dark:text-white">{file.name}</p>
-                <p className="text-sm text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="font-medium text-slate-900 dark:text-white">{files.length} SQL files selected</p>
+                <p className="text-sm text-slate-500 mt-1">
+                  {files.slice(0, 3).map(f => f.name).join(', ')}
+                  {files.length > 3 && ` +${files.length - 3} more`}
+                </p>
               </div>
             ) : (
               <div>
-                <p className="font-medium text-slate-600 dark:text-slate-300">Click to select ZIP file</p>
-                <p className="text-sm text-slate-400">or drag and drop</p>
+                <p className="font-medium text-slate-600 dark:text-slate-300">Click to select SQL files</p>
+                <p className="text-sm text-slate-400">Select all your .sql files (01_, 02_, etc.)</p>
               </div>
             )}
           </div>
@@ -186,10 +200,28 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".zip"
+            accept=".sql,.txt"
+            multiple
             onChange={handleFileSelect}
             className="hidden"
           />
+
+          {/* File list preview */}
+          {files.length > 0 && (
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+              <p className="text-xs text-slate-500 mb-2">Files will be processed in this order:</p>
+              <div className="space-y-1">
+                {files.map((file, i) => (
+                  <div key={file.name} className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-400 w-6">{i + 1}.</span>
+                    <FileText className="w-4 h-4 text-indigo-500" />
+                    <span className="text-slate-700 dark:text-slate-300 truncate">{file.name}</span>
+                    <span className="text-slate-400 text-xs ml-auto">{(file.size / 1024).toFixed(1)}KB</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
@@ -199,18 +231,18 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
 
           <button
             onClick={handleImport}
-            disabled={!file || isUploading}
+            disabled={files.length === 0 || isUploading}
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             {isUploading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Uploading...
+                Uploading {files.length} files...
               </>
             ) : (
               <>
                 <Play className="w-5 h-5" />
-                Start Import
+                Import {files.length} SQL Files
               </>
             )}
           </button>
@@ -266,7 +298,7 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
               <div className="text-xs text-slate-500">Rows</div>
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
-              <FileArchive className="w-5 h-5 mx-auto text-amber-500 mb-1" />
+              <FileText className="w-5 h-5 mx-auto text-amber-500 mb-1" />
               <div className="text-lg font-bold text-slate-900 dark:text-white">{job.files_done}</div>
               <div className="text-xs text-slate-500">Files</div>
             </div>
@@ -308,11 +340,11 @@ export const SqlImporter: React.FC<{ userId: string }> = ({ userId }) => {
             <button
               onClick={() => {
                 setJob(null);
-                setFile(null);
+                setFiles([]);
               }}
               className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-xl transition-colors"
             >
-              Import Another
+              Import More Files
             </button>
           )}
         </div>
