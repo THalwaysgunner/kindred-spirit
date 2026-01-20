@@ -34,10 +34,21 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [easyApplyFilter, setEasyApplyFilter] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const [openDropdown, setOpenDropdown] = useState<'remote' | 'experience' | 'date' | null>(null);
-  const remoteDropdownRef = useRef<HTMLDivElement>(null);
-  const experienceDropdownRef = useRef<HTMLDivElement>(null);
-  const dateDropdownRef = useRef<HTMLDivElement>(null);
+  // Filter bar dropdowns (for filtering loaded results - multi-select)
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<'remote' | 'experience' | 'date' | null>(null);
+  const filterRemoteRef = useRef<HTMLDivElement>(null);
+  const filterExperienceRef = useRef<HTMLDivElement>(null);
+  const filterDateRef = useRef<HTMLDivElement>(null);
+
+  // Search toolbar dropdowns (for API params - single select)
+  const [openSearchDropdown, setOpenSearchDropdown] = useState<'remote' | 'experience' | null>(null);
+  const searchRemoteRef = useRef<HTMLDivElement>(null);
+  const searchExperienceRef = useRef<HTMLDivElement>(null);
+
+  // Multi-select filter state (client-side filters)
+  const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>([]);
+  const [selectedExperiences, setSelectedExperiences] = useState<string[]>([]);
+  const [selectedDatePosted, setSelectedDatePosted] = useState<string>('');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -132,33 +143,42 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     if (e.key === 'Enter') handleSearch(1);
   };
 
-  // Filter results based on client-side filters (remote, experience, date, easy apply)
+  // Filter results based on client-side filters (multi-select work types, experiences, date, easy apply)
   const filteredResults = useMemo(() => {
     return results.filter(job => {
-      // Remote/Work type filter
-      if (filters.remote) {
+      // Work type filter (multi-select)
+      if (selectedWorkTypes.length > 0) {
         const workType = job.work_type?.toLowerCase() || '';
-        if (filters.remote === 'remote' && !workType.includes('remote')) return false;
-        if (filters.remote === 'onsite' && !workType.includes('on-site') && !workType.includes('onsite')) return false;
-        if (filters.remote === 'hybrid' && !workType.includes('hybrid')) return false;
+        const matchesAny = selectedWorkTypes.some(filter => {
+          if (filter === 'remote') return workType.includes('remote');
+          if (filter === 'onsite') return workType.includes('on-site') || workType.includes('onsite');
+          if (filter === 'hybrid') return workType.includes('hybrid');
+          return false;
+        });
+        if (!matchesAny) return false;
       }
 
-      // Experience level filter
-      if (filters.experienceLevel) {
+      // Experience level filter (multi-select)
+      if (selectedExperiences.length > 0) {
         const title = job.job_title?.toLowerCase() || '';
-        if (filters.experienceLevel === 'internship' && !title.includes('intern')) return false;
-        if (filters.experienceLevel === 'entry' && !title.includes('entry') && !title.includes('junior')) return false;
-        if (filters.experienceLevel === 'mid_senior' && !title.includes('senior') && !title.includes('lead')) return false;
-        if (filters.experienceLevel === 'director' && !title.includes('director') && !title.includes('head')) return false;
-        if (filters.experienceLevel === 'executive' && !title.includes('executive') && !title.includes('vp') && !title.includes('chief')) return false;
+        const matchesAny = selectedExperiences.some(filter => {
+          if (filter === 'internship') return title.includes('intern');
+          if (filter === 'entry') return title.includes('entry') || title.includes('junior');
+          if (filter === 'associate') return title.includes('associate');
+          if (filter === 'mid_senior') return title.includes('senior') || title.includes('lead');
+          if (filter === 'director') return title.includes('director') || title.includes('head');
+          if (filter === 'executive') return title.includes('executive') || title.includes('vp') || title.includes('chief');
+          return false;
+        });
+        if (!matchesAny) return false;
       }
 
-      // Date filter
-      if (filters.date_posted) {
+      // Date filter (single select)
+      if (selectedDatePosted) {
         const postedAt = job.posted_at?.toLowerCase() || '';
-        if (filters.date_posted === 'hour' && !postedAt.includes('minute')) return false;
-        if (filters.date_posted === 'day' && !postedAt.includes('hour') && !postedAt.includes('minute')) return false;
-        if (filters.date_posted === 'week' && postedAt.includes('month')) return false;
+        if (selectedDatePosted === 'hour' && !postedAt.includes('minute')) return false;
+        if (selectedDatePosted === 'day' && !postedAt.includes('hour') && !postedAt.includes('minute')) return false;
+        if (selectedDatePosted === 'week' && postedAt.includes('month')) return false;
       }
 
       // Easy Apply filter
@@ -166,7 +186,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
       return true;
     });
-  }, [results, filters.remote, filters.experienceLevel, filters.date_posted, easyApplyFilter]);
+  }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
   // Stats calculations
   const stats = useMemo(() => {
@@ -188,11 +208,23 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     const handleClickOutside = (event: MouseEvent) => {
       const targetNode = event.target as Node;
 
-      if (openDropdown) {
-        const remoteContains = !!remoteDropdownRef.current?.contains(targetNode);
-        const expContains = !!experienceDropdownRef.current?.contains(targetNode);
-        const dateContains = !!dateDropdownRef.current?.contains(targetNode);
-        if (!remoteContains && !expContains && !dateContains) setOpenDropdown(null);
+      // Close filter bar dropdowns
+      if (openFilterDropdown) {
+        const filterRemoteContains = !!filterRemoteRef.current?.contains(targetNode);
+        const filterExpContains = !!filterExperienceRef.current?.contains(targetNode);
+        const filterDateContains = !!filterDateRef.current?.contains(targetNode);
+        if (!filterRemoteContains && !filterExpContains && !filterDateContains) {
+          setOpenFilterDropdown(null);
+        }
+      }
+
+      // Close search toolbar dropdowns
+      if (openSearchDropdown) {
+        const searchRemoteContains = !!searchRemoteRef.current?.contains(targetNode);
+        const searchExpContains = !!searchExperienceRef.current?.contains(targetNode);
+        if (!searchRemoteContains && !searchExpContains) {
+          setOpenSearchDropdown(null);
+        }
       }
 
       if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
@@ -205,7 +237,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedJob, openDropdown]);
+  }, [selectedJob, openFilterDropdown, openSearchDropdown]);
 
   return (
     <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden min-w-[1200px]">
@@ -233,42 +265,54 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           ))}
         </div>
 
-        {/* 2. Filter Bar - Dropdowns for filtering results */}
+        {/* 2. Filter Bar - Dropdowns for filtering results (MULTI-SELECT) */}
         <div className="flex items-center gap-4 px-8 py-3 border-b border-slate-200 dark:border-slate-800 w-full">
-          {/* Remote/Work Type Dropdown */}
-          <div ref={remoteDropdownRef} className="relative">
+          {/* Work Type Dropdown (multi-select) */}
+          <div ref={filterRemoteRef} className="relative">
             <button
               type="button"
-              onClick={() => setOpenDropdown(openDropdown === 'remote' ? null : 'remote')}
+              onClick={() => setOpenFilterDropdown(openFilterDropdown === 'remote' ? null : 'remote')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                filters.remote 
+                selectedWorkTypes.length > 0 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
-              <span className="whitespace-nowrap">{getOptionLabel(remoteOptions, filters.remote)}</span>
+              <span className="whitespace-nowrap">
+                {selectedWorkTypes.length === 0 
+                  ? 'Work Type' 
+                  : selectedWorkTypes.length === 1 
+                    ? remoteOptions.find(o => o.value === selectedWorkTypes[0])?.label 
+                    : `${selectedWorkTypes.length} selected`}
+              </span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
-            {openDropdown === 'remote' && (
-              <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                {remoteOptions.map((opt) => {
-                  const selected = opt.value === filters.remote;
+            {openFilterDropdown === 'remote' && (
+              <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                {remoteOptions.filter(opt => opt.value !== '').map((opt) => {
+                  const isSelected = selectedWorkTypes.includes(opt.value);
                   return (
                     <button
-                      key={opt.value || 'empty'}
+                      key={opt.value}
                       type="button"
                       onClick={() => {
-                        setFilters({ ...filters, remote: opt.value });
-                        setOpenDropdown(null);
+                        if (isSelected) {
+                          setSelectedWorkTypes(selectedWorkTypes.filter(v => v !== opt.value));
+                        } else {
+                          setSelectedWorkTypes([...selectedWorkTypes, opt.value]);
+                        }
                       }}
                       className={
-                        `w-full text-left px-4 py-2 text-xs transition-colors ` +
-                        (selected
+                        `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
+                        (isSelected
                           ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
                           : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                       }
                     >
+                      <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${isSelected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
+                        {isSelected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                      </div>
                       {opt.label}
                     </button>
                   );
@@ -277,40 +321,52 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             )}
           </div>
 
-          {/* Experience Level Dropdown */}
-          <div ref={experienceDropdownRef} className="relative">
+          {/* Experience Level Dropdown (multi-select) */}
+          <div ref={filterExperienceRef} className="relative">
             <button
               type="button"
-              onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
+              onClick={() => setOpenFilterDropdown(openFilterDropdown === 'experience' ? null : 'experience')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                filters.experienceLevel 
+                selectedExperiences.length > 0 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
-              <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
+              <span className="whitespace-nowrap">
+                {selectedExperiences.length === 0 
+                  ? 'Experience' 
+                  : selectedExperiences.length === 1 
+                    ? experienceOptions.find(o => o.value === selectedExperiences[0])?.label 
+                    : `${selectedExperiences.length} selected`}
+              </span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
-            {openDropdown === 'experience' && (
-              <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                {experienceOptions.map((opt) => {
-                  const selected = opt.value === filters.experienceLevel;
+            {openFilterDropdown === 'experience' && (
+              <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                {experienceOptions.filter(opt => opt.value !== '').map((opt) => {
+                  const isSelected = selectedExperiences.includes(opt.value);
                   return (
                     <button
-                      key={opt.value || 'empty'}
+                      key={opt.value}
                       type="button"
                       onClick={() => {
-                        setFilters({ ...filters, experienceLevel: opt.value });
-                        setOpenDropdown(null);
+                        if (isSelected) {
+                          setSelectedExperiences(selectedExperiences.filter(v => v !== opt.value));
+                        } else {
+                          setSelectedExperiences([...selectedExperiences, opt.value]);
+                        }
                       }}
                       className={
-                        `w-full text-left px-4 py-2 text-xs transition-colors ` +
-                        (selected
+                        `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
+                        (isSelected
                           ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
                           : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                       }
                     >
+                      <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${isSelected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
+                        {isSelected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                      </div>
                       {opt.label}
                     </button>
                   );
@@ -319,33 +375,33 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             )}
           </div>
 
-          {/* Date Posted Dropdown */}
-          <div ref={dateDropdownRef} className="relative">
+          {/* Date Posted Dropdown (single-select) */}
+          <div ref={filterDateRef} className="relative">
             <button
               type="button"
-              onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
+              onClick={() => setOpenFilterDropdown(openFilterDropdown === 'date' ? null : 'date')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                filters.date_posted 
+                selectedDatePosted 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+              <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, selectedDatePosted)}</span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
-            {openDropdown === 'date' && (
+            {openFilterDropdown === 'date' && (
               <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                 {datePostedOptions.map((opt) => {
-                  const selected = opt.value === filters.date_posted;
+                  const selected = opt.value === selectedDatePosted;
                   return (
                     <button
                       key={opt.value || 'empty'}
                       type="button"
                       onClick={() => {
-                        setFilters({ ...filters, date_posted: opt.value });
-                        setOpenDropdown(null);
+                        setSelectedDatePosted(opt.value);
+                        setOpenFilterDropdown(null);
                       }}
                       className={
                         `w-full text-left px-4 py-2 text-xs transition-colors ` +
@@ -377,11 +433,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           </button>
 
           {/* Clear Filters */}
-          {(filters.remote || filters.experienceLevel || filters.date_posted || easyApplyFilter) && (
+          {(selectedWorkTypes.length > 0 || selectedExperiences.length > 0 || selectedDatePosted || easyApplyFilter) && (
             <button
               type="button"
               onClick={() => {
-                setFilters({ ...filters, remote: '', experienceLevel: '', date_posted: '' });
+                setSelectedWorkTypes([]);
+                setSelectedExperiences([]);
+                setSelectedDatePosted('');
                 setEasyApplyFilter(false);
               }}
               className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -419,18 +477,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {/* API Search Filters */}
-            <div ref={remoteDropdownRef} className="relative">
+            {/* API Search Filters - single select for search params */}
+            <div ref={searchRemoteRef} className="relative">
               <button
                 type="button"
-                onClick={() => setOpenDropdown(openDropdown === 'remote' ? null : 'remote')}
+                onClick={() => setOpenSearchDropdown(openSearchDropdown === 'remote' ? null : 'remote')}
                 className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <span className="whitespace-nowrap">{getOptionLabel(remoteOptions, filters.remote)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
-              {openDropdown === 'remote' && (
+              {openSearchDropdown === 'remote' && (
                 <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                   {remoteOptions.map((opt) => {
                     const selected = opt.value === filters.remote;
@@ -440,7 +498,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         type="button"
                         onClick={() => {
                           setFilters({ ...filters, remote: opt.value });
-                          setOpenDropdown(null);
+                          setOpenSearchDropdown(null);
                         }}
                         className={
                           `w-full text-left px-4 py-2 text-xs transition-colors ` +
@@ -457,17 +515,17 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               )}
             </div>
 
-            <div ref={experienceDropdownRef} className="relative">
+            <div ref={searchExperienceRef} className="relative">
               <button
                 type="button"
-                onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
+                onClick={() => setOpenSearchDropdown(openSearchDropdown === 'experience' ? null : 'experience')}
                 className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
                 <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
-              {openDropdown === 'experience' && (
+              {openSearchDropdown === 'experience' && (
                 <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                   {experienceOptions.map((opt) => {
                     const selected = opt.value === filters.experienceLevel;
@@ -477,7 +535,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         type="button"
                         onClick={() => {
                           setFilters({ ...filters, experienceLevel: opt.value });
-                          setOpenDropdown(null);
+                          setOpenSearchDropdown(null);
                         }}
                         className={
                           `w-full text-left px-4 py-2 text-xs transition-colors ` +
