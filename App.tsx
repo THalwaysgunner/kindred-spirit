@@ -34,6 +34,7 @@ import {
   CheckCircle2,
   HelpCircle,
   Share2,
+  ArrowUpRight,
 } from 'lucide-react';
 import { CVPreview } from './components/CVPreview';
 import { Auth } from './components/Auth';
@@ -664,27 +665,92 @@ export default function App() {
         )}
       </button>
 
+      {/* AI Study Coach Toggle Button - Perfectly aligned at 35% */}
+      {view === 'interview-prep' && (
+        <button
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className="fixed z-[60] right-0 transition-all duration-300 flex items-center justify-center w-6 h-12 bg-[#5D5FEF] border border-white/20 border-r-0 rounded-l-lg shadow-lg hover:w-8 group"
+          style={{
+            top: '35%',
+            transform: `translateX(${isChatOpen ? '-384px' : '0'})`,
+            marginTop: '-24px'
+          }}
+          title={isChatOpen ? "Close Study Coach" : "Open Study Coach"}
+        >
+          <Bot className="w-4 h-4 text-white" />
+          <span className={`absolute top-2 ${isChatOpen ? 'left-2' : 'right-2'} w-2 h-2 bg-green-500 rounded-full border border-white ${!isChatOpen ? 'animate-pulse' : ''}`}></span>
+        </button>
+      )}
+
         <main className="flex-1 flex flex-col relative overflow-hidden">
           <header className={`h-20 bg-white dark:bg-[#0F111A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-40 transition-colors ${(view === 'applications-list' || view === 'interview-prep') ? 'px-0' : 'px-8'}`}>
             <div className={`flex-1 flex items-center justify-between ${(view === 'applications-list' || view === 'interview-prep') ? 'px-8' : ''}`}>
               <div className="flex items-center gap-4">
-                <h2 className="text-slate-900 dark:text-white font-bold text-xl tracking-tight flex items-baseline gap-3">
-                  {(view === 'applications-list' || view === 'interview-prep') ? 'My Applications' : (
-                    <span>
-                      {view === 'dashboard' && 'Dashboard'}
-                      {view === 'create' && 'Create Application'}
-                      {view === 'profile' && 'Profile'}
-                      {view === 'view-application' && 'Application Details'}
-                      {view === 'search' && 'Search Jobs'}
-                      {view === 'get-ready' && 'Get Ready'}
-                    </span>
-                  )}
-                  {(view === 'applications-list' || view === 'interview-prep') && (
-                    <span className="text-slate-500 text-sm font-bold lowercase">
-                      {applications.length}
-                    </span>
-                  )}
-                </h2>
+                {view === 'interview-prep' ? (
+                  <div className="flex items-center gap-6">
+                    <h2 className="text-slate-900 dark:text-white font-bold text-xl tracking-tight">Study Plan</h2>
+
+                    {/* Job Selector Dropdown in Header */}
+                    <div className="relative group z-50">
+                      <button className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl transition-all h-10">
+                        <div className="w-6 h-6 rounded-md bg-[#5D5FEF] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                          {applications.find(a => a.id === selectedStudyAppId)?.requirements.company.charAt(0) || '?'}
+                        </div>
+                        <div className="text-left">
+                          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Target Job</div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 leading-none">
+                            {applications.find(a => a.id === selectedStudyAppId)?.requirements.company || 'Select Job'}
+                            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                          </div>
+                        </div>
+                      </button>
+
+                      <div className="absolute left-0 top-full mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden hidden group-hover:block animate-in fade-in zoom-in-95 duration-200 backdrop-blur-xl transition-all">
+                        <div className="p-2 space-y-1">
+                          {applications.map(app => (
+                            <div
+                              key={app.id}
+                              onClick={() => setSelectedStudyAppId(app.id)}
+                              className={`px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-colors ${selectedStudyAppId === app.id
+                                ? 'bg-[#5D5FEF]/10 dark:bg-[#5D5FEF]/20'
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                }`}
+                            >
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${selectedStudyAppId === app.id
+                                ? 'bg-[#5D5FEF] text-white border-transparent'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600'
+                                }`}>
+                                {app.requirements.company.charAt(0)}
+                              </div>
+                              <div className="overflow-hidden">
+                                <div className="text-slate-900 dark:text-white font-bold text-sm truncate">{app.requirements.company}</div>
+                                <div className="text-slate-500 text-[10px] uppercase font-bold tracking-wider truncate">{app.requirements.title}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <h2 className="text-slate-900 dark:text-white font-bold text-xl tracking-tight flex items-baseline gap-3">
+                    {view === 'applications-list' ? 'My Applications' : (
+                      <span>
+                        {view === 'dashboard' && 'Dashboard'}
+                        {view === 'create' && 'Create Application'}
+                        {view === 'profile' && 'Profile'}
+                        {view === 'view-application' && 'Application Details'}
+                        {view === 'search' && 'Search Jobs'}
+                        {view === 'get-ready' && 'Get Ready'}
+                      </span>
+                    )}
+                    {view === 'applications-list' && (
+                      <span className="text-slate-500 text-sm font-bold lowercase">
+                        {applications.length}
+                      </span>
+                    )}
+                  </h2>
+                )}
               </div>
 
               <div className="flex items-center gap-4">
@@ -724,7 +790,7 @@ export default function App() {
 
         <div className={`flex-1 overflow-hidden flex flex-row transition-colors relative ${view === 'create' ? 'bg-white' : 'bg-slate-50/50'} dark:bg-[#0F111A]`}>
           <div className="flex-1 overflow-y-auto no-scrollbar">
-            <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'}`}>
+            <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'} ${isChatOpen && view === 'interview-prep' ? 'mr-[384px]' : ''}`}>
               {view === 'dashboard' && <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />}
               {view === 'create' && (
                 <Wizard
@@ -781,6 +847,79 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* AI Study Coach Panel */}
+          {view === 'interview-prep' && isChatOpen && (
+            <div className="fixed right-0 top-20 bottom-0 w-[384px] bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-300">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#5D5FEF] flex items-center justify-center">
+                    <Bot className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Study Coach</h3>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">AI Interview Prep</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsChatOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#5D5FEF] flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-tl-none px-4 py-3 max-w-[280px]">
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                      Hi! I'm your Study Coach. I'll help you prepare for your interview at <span className="font-bold text-[#5D5FEF]">{applications.find(a => a.id === selectedStudyAppId)?.requirements.company || 'your target company'}</span>.
+                    </p>
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mt-2">
+                      What would you like to work on today?
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="space-y-2 pt-4">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold px-1">Quick Actions</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Technical Questions', icon: Code2 },
+                      { label: 'Behavioral Prep', icon: User },
+                      { label: 'Company Research', icon: Search },
+                      { label: 'Mock Interview', icon: Bot },
+                    ].map((action, i) => (
+                      <button
+                        key={i}
+                        className="p-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#5D5FEF]/10 dark:hover:bg-[#5D5FEF]/20 border border-slate-200 dark:border-slate-700 hover:border-[#5D5FEF] rounded-xl text-left transition-all group"
+                      >
+                        <action.icon className="w-4 h-4 text-slate-400 group-hover:text-[#5D5FEF] mb-2" />
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 group-hover:text-[#5D5FEF]">{action.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Ask me anything..."
+                    className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#5D5FEF] outline-none transition-all"
+                  />
+                  <button className="p-3 bg-[#5D5FEF] text-white rounded-xl hover:bg-[#4B4DD6] transition-colors">
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div >
