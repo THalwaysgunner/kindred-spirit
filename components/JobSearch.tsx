@@ -242,7 +242,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           <div className="flex items-center gap-3">
             {/* Filter Dropdowns */}
             <select
-              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-none rounded-lg text-xs tracking-wider outline-none text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20 dark:hover:text-[#FF6B00] transition-all"
+              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-all appearance-none"
+              style={{ border: 'none', outline: 'none' }}
               value={filters.date_posted}
               onChange={(e) => setFilters({ ...filters, date_posted: e.target.value })}
             >
@@ -253,7 +254,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             </select>
 
             <select
-              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-none rounded-lg text-xs tracking-wider outline-none text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20 dark:hover:text-[#FF6B00] transition-all"
+              className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-all appearance-none"
+              style={{ border: 'none', outline: 'none' }}
               value={filters.experienceLevel}
               onChange={(e) => setFilters({ ...filters, experienceLevel: e.target.value })}
             >
