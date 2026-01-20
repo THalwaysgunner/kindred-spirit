@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.ai]
 verify_jwt = false
+
+[functions.normalize-search]
+verify_jwt = false
+
+[functions.prefetch-jobs]
+verify_jwt = false
+
+[functions.cleanup-jobs]
+verify_jwt = false
