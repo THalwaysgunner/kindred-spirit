@@ -103,6 +103,24 @@ export type Database = {
           },
         ]
       }
+      content_model_reference: {
+        Row: {
+          description: string
+          element_id: string
+          element_name: string
+        }
+        Insert: {
+          description: string
+          element_id: string
+          element_name: string
+        }
+        Update: {
+          description?: string
+          element_id?: string
+          element_name?: string
+        }
+        Relationships: []
+      }
       education: {
         Row: {
           created_at: string
@@ -266,6 +284,36 @@ export type Database = {
           },
         ]
       }
+      job_zone_reference: {
+        Row: {
+          education: string
+          examples: string
+          experience: string
+          job_training: string
+          job_zone: number
+          name: string
+          svp_range: string
+        }
+        Insert: {
+          education: string
+          examples: string
+          experience: string
+          job_training: string
+          job_zone: number
+          name: string
+          svp_range: string
+        }
+        Update: {
+          education?: string
+          examples?: string
+          experience?: string
+          job_training?: string
+          job_zone?: number
+          name?: string
+          svp_range?: string
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           applicant_count: number | null
@@ -335,6 +383,24 @@ export type Database = {
           skills?: Json | null
           updated_at?: string | null
           work_type?: string | null
+        }
+        Relationships: []
+      }
+      occupation_data: {
+        Row: {
+          description: string
+          onetsoc_code: string
+          title: string
+        }
+        Insert: {
+          description: string
+          onetsoc_code: string
+          title: string
+        }
+        Update: {
+          description?: string
+          onetsoc_code?: string
+          title?: string
         }
         Relationships: []
       }
