@@ -155,14 +155,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   }, [selectedJob, openDropdown]);
 
   return (
-    <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden">
+    <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden min-w-[1200px]">
       {/* Main Content */}
       <div className={`flex flex-col w-full transition-all duration-300 ${selectedJob ? 'mr-[600px]' : ''}`}>
 
         {/* 1. Stat Cards - Same as ApplicationsList */}
-        <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full">
+        <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full min-w-[1200px]">
           {stats.map((stat, i) => (
-            <div key={i} className="bg-white dark:bg-[#0D0F16] p-6 flex flex-col h-28 font-sans group">
+            <div key={i} className="bg-white dark:bg-[#0D0F16] p-6 flex flex-col h-28 min-h-28 font-sans group">
               <p className="text-xs font-normal text-slate-400 tracking-wider mb-auto">{stat.label}</p>
 
               <div className="flex items-center justify-between">
@@ -244,9 +244,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         </div>
 
         {/* 3. Action Toolbar Row - Same as ApplicationsList */}
-        <div className="flex items-center justify-between px-8 py-5 w-full">
-          <div className="flex items-center gap-4">
-            <div className="relative group w-80">
+        <div className="flex items-center justify-between px-8 py-5 w-full min-w-[1200px]">
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="relative group w-80 min-w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
@@ -257,7 +257,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
               />
             </div>
-            <div className="relative group w-60">
+            <div className="relative group w-60 min-w-60">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
@@ -270,16 +270,16 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             {/* Filter Dropdowns */}
             <div ref={dateDropdownRef} className="relative">
               <button
                 type="button"
                 onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
-                className="w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+                className="w-44 min-w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
-                <span>{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, filters.date_posted)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
               {openDropdown === 'date' && (
@@ -313,10 +313,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <button
                 type="button"
                 onClick={() => setOpenDropdown(openDropdown === 'experience' ? null : 'experience')}
-                className="w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
+                className="w-44 min-w-44 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
-                <span>{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
               {openDropdown === 'experience' && (
@@ -349,7 +349,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             <button
               onClick={handleSearch}
               disabled={loading}
-              className="px-5 py-2.5 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 min-w-32 bg-[#FF6B00] text-white hover:bg-[#E66000] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 stroke-[3]" />}
               Search Jobs
