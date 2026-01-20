@@ -191,6 +191,42 @@ export type Database = {
           },
         ]
       }
+      job_search_cache: {
+        Row: {
+          created_at: string
+          expires_at: string
+          filters: Json | null
+          id: string
+          jobs: Json
+          keywords: string | null
+          location: string | null
+          search_hash: string
+          total_count: number | null
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          filters?: Json | null
+          id?: string
+          jobs?: Json
+          keywords?: string | null
+          location?: string | null
+          search_hash: string
+          total_count?: number | null
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          filters?: Json | null
+          id?: string
+          jobs?: Json
+          keywords?: string | null
+          location?: string | null
+          search_hash?: string
+          total_count?: number | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           email: string | null
