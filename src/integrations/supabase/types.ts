@@ -842,6 +842,33 @@ export type Database = {
         }
         Relationships: []
       }
+      occupation_level_metadata: {
+        Row: {
+          date: string | null
+          item: string | null
+          n: string | null
+          o_net_soc_code: string | null
+          percent: string | null
+          response: string | null
+        }
+        Insert: {
+          date?: string | null
+          item?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          percent?: string | null
+          response?: string | null
+        }
+        Update: {
+          date?: string | null
+          item?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          percent?: string | null
+          response?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           email: string | null
@@ -929,6 +956,24 @@ export type Database = {
           element_name?: string | null
           keyword?: string | null
           keyword_type?: string | null
+        }
+        Relationships: []
+      }
+      sample_of_reported_titles: {
+        Row: {
+          o_net_soc_code: string | null
+          reported_job_title: string | null
+          shown_in_my_next_move: string | null
+        }
+        Insert: {
+          o_net_soc_code?: string | null
+          reported_job_title?: string | null
+          shown_in_my_next_move?: string | null
+        }
+        Update: {
+          o_net_soc_code?: string | null
+          reported_job_title?: string | null
+          shown_in_my_next_move?: string | null
         }
         Relationships: []
       }
@@ -1058,6 +1103,27 @@ export type Database = {
         }
         Relationships: []
       }
+      skills_to_work_context: {
+        Row: {
+          skills_element_id: string | null
+          skills_element_name: string | null
+          work_context_element_id: string | null
+          work_context_element_name: string | null
+        }
+        Insert: {
+          skills_element_id?: string | null
+          skills_element_name?: string | null
+          work_context_element_id?: string | null
+          work_context_element_name?: string | null
+        }
+        Update: {
+          skills_element_id?: string | null
+          skills_element_name?: string | null
+          work_context_element_id?: string | null
+          work_context_element_name?: string | null
+        }
+        Relationships: []
+      }
       survey_booklet_locations: {
         Row: {
           element_id: string | null
@@ -1076,6 +1142,69 @@ export type Database = {
           element_name?: string | null
           scale_id?: string | null
           survey_item_number?: string | null
+        }
+        Relationships: []
+      }
+      task_categories: {
+        Row: {
+          category: string | null
+          category_description: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          category?: string | null
+          category_description?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          category?: string | null
+          category_description?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      task_ratings: {
+        Row: {
+          category: string | null
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          task_id: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          task_id?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          task_id?: string | null
+          upper_ci_bound?: string | null
         }
         Relationships: []
       }
@@ -1178,6 +1307,39 @@ export type Database = {
           commodity_title?: string | null
           example?: string | null
           o_net_soc_code?: string | null
+        }
+        Relationships: []
+      }
+      unspsc_reference: {
+        Row: {
+          class_code: string | null
+          class_title: string | null
+          commodity_code: string | null
+          commodity_title: string | null
+          family_code: string | null
+          family_title: string | null
+          segment_code: string | null
+          segment_title: string | null
+        }
+        Insert: {
+          class_code?: string | null
+          class_title?: string | null
+          commodity_code?: string | null
+          commodity_title?: string | null
+          family_code?: string | null
+          family_title?: string | null
+          segment_code?: string | null
+          segment_title?: string | null
+        }
+        Update: {
+          class_code?: string | null
+          class_title?: string | null
+          commodity_code?: string | null
+          commodity_title?: string | null
+          family_code?: string | null
+          family_title?: string | null
+          segment_code?: string | null
+          segment_title?: string | null
         }
         Relationships: []
       }
@@ -1300,6 +1462,66 @@ export type Database = {
           category_description?: string | null
           element_id?: string | null
           element_name?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      work_styles: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          o_net_soc_code: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      work_values: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          o_net_soc_code: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
           scale_id?: string | null
         }
         Relationships: []
