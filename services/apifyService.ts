@@ -10,6 +10,13 @@ export interface JobSearchParams {
   page?: number;
   pageSize?: number;
   forceRefresh?: boolean;
+  cacheOnly?: boolean;
+  clientFilters?: {
+    workTypes?: string[];
+    experiences?: string[];
+    datePosted?: string;
+    easyApply?: boolean;
+  };
 }
 
 export interface JobSearchResponse {
@@ -20,6 +27,12 @@ export interface JobSearchResponse {
   totalPages: number;
   fromCache: boolean;
   hasMoreResults: boolean;
+  stats?: {
+    total: number;
+    remote: number;
+    easyApply: number;
+    recent: number;
+  };
 }
 
 /**
@@ -47,7 +60,9 @@ export const ApifyService = {
           easy_apply: params.easy_apply || '',
           page: params.page || 1,
           pageSize: params.pageSize || 20,
-          forceRefresh: params.forceRefresh || false
+          forceRefresh: params.forceRefresh || false,
+          cacheOnly: params.cacheOnly || false,
+          clientFilters: params.clientFilters || null
         }
       }
     });
