@@ -70,6 +70,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   // Row 2 - Fetch variables (ONLY keywords and location - sent to API)
   const [searchKeywords, setSearchKeywords] = useState('');
   const [searchLocation, setSearchLocation] = useState('');
+  const [fetchWorkType, setFetchWorkType] = useState('');
+  const [fetchExperienceLevel, setFetchExperienceLevel] = useState('');
 
   // Raw results from API (before client-side filtering)
   const [rawResults, setRawResults] = useState<JobSearchResult[]>([]);
@@ -148,7 +150,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return found?.label ?? options[0]?.label ?? '';
   };
 
-  // Fetch jobs from API - ONLY uses keywords + location (Row 2)
+  // Fetch jobs from API - Row 2 variables only (NOT Row 1 filters)
   const handleSearch = async (page: number = 1, forceRefresh: boolean = false) => {
     if (!searchKeywords && !searchLocation) return;
 
@@ -165,8 +167,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       const searchParams = {
         keywords: searchKeywords,
         location: searchLocation,
-        remote: '',
-        experienceLevel: '',
+        remote: fetchWorkType,
+        experienceLevel: fetchExperienceLevel,
         date_posted: '',
         easy_apply: '',
         page,
@@ -175,7 +177,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         cacheOnly: false
       };
 
-      console.log('[JobSearch] Fetching with params:', { keywords: searchKeywords, location: searchLocation, page });
+      console.log('[JobSearch] Fetching with params:', {
+        keywords: searchKeywords,
+        location: searchLocation,
+        remote: fetchWorkType,
+        experienceLevel: fetchExperienceLevel,
+        page,
+      });
 
       const response = await ApifyService.searchJobs(searchParams);
       
@@ -620,6 +628,38 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 onKeyDown={handleKeyDown}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
               />
+            </div>
+
+            {/* Row 2 Work Type (sent to API/DB; not connected to Row 1 UI filters) */}
+            <div className="relative group w-44 min-w-44">
+              <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <select
+                value={fetchWorkType}
+                onChange={(e) => setFetchWorkType(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200"
+              >
+                {remoteOptions.map((opt) => (
+                  <option key={opt.value || 'empty'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Row 2 Experience Level (sent to API/DB; not connected to Row 1 UI filters) */}
+            <div className="relative group w-52 min-w-52">
+              <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <select
+                value={fetchExperienceLevel}
+                onChange={(e) => setFetchExperienceLevel(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200"
+              >
+                {experienceOptions.map((opt) => (
+                  <option key={opt.value || 'empty'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <button
               type="button"
