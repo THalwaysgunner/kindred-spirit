@@ -722,19 +722,19 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => handleSearch(1)}
-              disabled={
-                loading ||
-                !(searchKeywords.trim() || searchLocation.trim() || fetchWorkType.trim() || fetchExperienceLevel.trim())
-              }
-              className="px-6 py-2.5 bg-[#FF6B00] hover:bg-[#E55A00] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium tracking-wider transition-colors flex items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Search
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={() => handleSearch(1)}
+            disabled={
+              loading ||
+              !(searchKeywords.trim() || searchLocation.trim() || fetchWorkType.trim() || fetchExperienceLevel.trim())
+            }
+            className="px-6 py-2.5 bg-[#FF6B00] hover:bg-[#E55A00] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium tracking-wider transition-colors flex items-center gap-2"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            Search
+          </button>
         </div>
 
         {/* Results Table */}
