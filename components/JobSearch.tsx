@@ -266,6 +266,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       filtered = filtered.filter(job => job.is_easy_apply === true);
     }
 
+    // Always keep results sorted by posted date (newest first)
+    filtered.sort((a, b) => {
+      const aMs = a.posted_at ? new Date(a.posted_at).getTime() : 0;
+      const bMs = b.posted_at ? new Date(b.posted_at).getTime() : 0;
+      return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
+    });
+
     return filtered;
   }, [rawResults, clientWorkTypes, clientExperiences, clientDatePosted, clientEasyApply]);
 
@@ -332,11 +339,21 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
   // Stats based on filtered results (client-side)
   const stats = useMemo(() => {
-    // IMPORTANT: Stat cards reflect the full Row 2 dataset (server totals), not the current page / Row 1 filters.
+    // IMPORTANT: Stat cards prefer server totals (full Row 2 dataset). "Posted Today" is computed
+    // from the loaded jobs to ensure it reflects the actual posted date the user sees.
     const total = serverStats?.total ?? totalCount;
     const remote = serverStats?.remote ?? 0;
     const easyApply = serverStats?.easyApply ?? 0;
-    const recent = serverStats?.recent ?? 0;
+
+    // "Posted Today" should be based on the actual posted date (not fetch/ingest time).
+    // We compute it from the jobs currently loaded on the page to match what the user sees.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayStartMs = startOfToday.getTime();
+    const recent = rawResults.filter((job) => {
+      const ms = job.posted_at ? new Date(job.posted_at).getTime() : NaN;
+      return Number.isFinite(ms) && ms >= todayStartMs;
+    }).length;
 
     return [
       { label: 'Showing', value: total, growth: '', trend: 'up' },
@@ -344,7 +361,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [serverStats, totalCount]);
+  }, [serverStats, totalCount, rawResults]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
