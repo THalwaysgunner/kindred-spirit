@@ -278,58 +278,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filter results based on client-side filters (multi-select work types, experiences, date, easy apply)
-  // Then sort by posted date (newest first)
-  const filteredResults = useMemo(() => {
-    const filtered = results.filter(job => {
-      // Work type filter (multi-select)
-      if (selectedWorkTypes.length > 0) {
-        const workType = job.work_type?.toLowerCase() || '';
-        const matchesAny = selectedWorkTypes.some(filter => {
-          if (filter === 'remote') return workType.includes('remote');
-          if (filter === 'onsite') return workType.includes('on-site') || workType.includes('onsite');
-          if (filter === 'hybrid') return workType.includes('hybrid');
-          return false;
-        });
-        if (!matchesAny) return false;
-      }
-
-      // Experience level filter (multi-select)
-      if (selectedExperiences.length > 0) {
-        const title = job.job_title?.toLowerCase() || '';
-        const matchesAny = selectedExperiences.some(filter => {
-          if (filter === 'internship') return title.includes('intern');
-          if (filter === 'entry') return title.includes('entry') || title.includes('junior');
-          if (filter === 'associate') return title.includes('associate');
-          if (filter === 'mid_senior') return title.includes('senior') || title.includes('lead');
-          if (filter === 'director') return title.includes('director') || title.includes('head');
-          if (filter === 'executive') return title.includes('executive') || title.includes('vp') || title.includes('chief');
-          return false;
-        });
-        if (!matchesAny) return false;
-      }
-
-      // Date filter (single select)
-      if (selectedDatePosted) {
-        const postedAt = job.posted_at?.toLowerCase() || '';
-        if (selectedDatePosted === 'hour' && !postedAt.includes('minute')) return false;
-        if (selectedDatePosted === 'day' && !postedAt.includes('hour') && !postedAt.includes('minute')) return false;
-        if (selectedDatePosted === 'week' && postedAt.includes('month')) return false;
-      }
-
-      // Easy Apply filter
-      if (easyApplyFilter && !job.is_easy_apply) return false;
-
-      return true;
-    });
-
-    // Sort by posted date (newest first)
-    return filtered.sort((a, b) => {
-      const dateA = new Date(a.posted_at || 0).getTime();
-      const dateB = new Date(b.posted_at || 0).getTime();
-      return dateB - dateA; // Descending (newest first)
-    });
-  }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
+  // Results are filtered + ordered server-side so counts/cards/pagination match the full dataset.
+  const filteredResults = useMemo(() => results, [results]);
 
   // Stats calculations - reflect FULL filtered dataset (provided by backend)
   const stats = useMemo(() => {

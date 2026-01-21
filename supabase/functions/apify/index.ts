@@ -378,202 +378,283 @@ serve(async (req) => {
       case 'searchJobs': {
         const page = params.page || 1;
         const pageSize = params.pageSize || 20;
-        const forceRefresh = params.forceRefresh || false;
+        const forceRefresh = !!params.forceRefresh;
+        const cacheOnly = !!params.cacheOnly;
         const keywords = (params.keywords || '').trim();
         const location = (params.location || '').trim();
+        const clientFilters = params.clientFilters || {};
 
-        console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, forceRefresh: ${forceRefresh}`);
+        const nowIso = new Date().toISOString();
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize - 1;
 
-        // Detect search mode: broad (location-only or keyword-only) vs specific (both)
         const hasKeywords = keywords.length > 0;
         const hasLocation = location.length > 0;
         const isBroadSearch = !hasKeywords || !hasLocation;
 
-        const startIndex = (page - 1) * pageSize;
-        let allJobs: any[] = [];
-        let needsApiFetch = false;
-        let canonicalSearchTermId = '';
-        let canonicalTerm = '';
-        let normalizedLocation = '';
-        let relatedTermIds: string[] = [];
+        const selectedWorkTypes: string[] = Array.isArray(clientFilters.workTypes)
+          ? clientFilters.workTypes
+          : (params.remote ? [params.remote] : []);
 
-        if (isBroadSearch) {
-          // ============ SMART AGGREGATION MODE ============
-          // Search across ALL cached jobs using direct DB queries
-          console.log(`[Search] Broad search mode - aggregating from cache`);
+        const selectedExperiences: string[] = Array.isArray(clientFilters.experiences)
+          ? clientFilters.experiences
+          : (params.experienceLevel ? [params.experienceLevel] : []);
 
-          let broadQuery = supabase
-            .from('jobs')
-            .select('*')
-            .gt('expires_at', new Date().toISOString())
-            .order('posted_at', { ascending: false });
+        const selectedDatePosted: string = (clientFilters.datePosted || params.date_posted || '').toString();
+        const selectedEasyApply: boolean = !!clientFilters.easyApply || params.easy_apply === 'true';
 
-          // Location-only search: find all jobs matching location
-          if (hasLocation && !hasKeywords) {
-            const normalizedLoc = normalizeText(location);
-            console.log(`[Search] Location-only search: "${normalizedLoc}"`);
-            broadQuery = broadQuery.ilike('location', `%${normalizedLoc}%`);
-          }
+        function applyWorkTypeFilter(query: any, columnPrefix: string) {
+          if (!selectedWorkTypes || selectedWorkTypes.length === 0) return query;
 
-          // Keyword-only search: find jobs matching keyword in title OR via canonical term links
-          if (hasKeywords && !hasLocation) {
-            const searchCanonical = canonicalizeKeywords(keywords);
-            console.log(`[Search] Keyword-only search: "${searchCanonical}"`);
-            
-            // First try to find jobs via search term links (canonical matching)
-            const { data: matchingTerms } = await supabase
-              .from('search_terms')
-              .select('id')
-              .eq('canonical_term', searchCanonical);
-
-            if (matchingTerms && matchingTerms.length > 0) {
-              const termIds = matchingTerms.map(t => t.id);
-              const { data: linkedJobIds } = await supabase
-                .from('job_search_links')
-                .select('job_id')
-                .in('search_term_id', termIds);
-
-              if (linkedJobIds && linkedJobIds.length > 0) {
-                const jobIds = linkedJobIds.map(l => l.job_id);
-                broadQuery = broadQuery.in('id', jobIds);
-              }
-            } else {
-              // Fallback: search job titles directly
-              broadQuery = broadQuery.ilike('job_title', `%${searchCanonical}%`);
+          const clauses: string[] = [];
+          for (const wt of selectedWorkTypes) {
+            if (wt === 'remote') clauses.push(`${columnPrefix}work_type.ilike.%remote%`);
+            if (wt === 'hybrid') clauses.push(`${columnPrefix}work_type.ilike.%hybrid%`);
+            if (wt === 'onsite') {
+              clauses.push(`${columnPrefix}work_type.ilike.%on-site%`);
+              clauses.push(`${columnPrefix}work_type.ilike.%onsite%`);
             }
           }
 
-          // Apply additional filters
-          if (params.remote && params.remote !== '') {
-            broadQuery = broadQuery.ilike('work_type', `%${params.remote}%`);
+          if (clauses.length === 0) return query;
+          return query.or(clauses.join(','));
+        }
+
+        function applyExperienceFilter(query: any, columnPrefix: string) {
+          if (!selectedExperiences || selectedExperiences.length === 0) return query;
+
+          const clauses: string[] = [];
+          for (const exp of selectedExperiences) {
+            if (exp === 'internship') clauses.push(`${columnPrefix}job_title.ilike.%intern%`);
+            if (exp === 'entry') {
+              clauses.push(`${columnPrefix}job_title.ilike.%entry%`);
+              clauses.push(`${columnPrefix}job_title.ilike.%junior%`);
+            }
+            if (exp === 'associate') clauses.push(`${columnPrefix}job_title.ilike.%associate%`);
+            if (exp === 'mid_senior') {
+              clauses.push(`${columnPrefix}job_title.ilike.%senior%`);
+              clauses.push(`${columnPrefix}job_title.ilike.%lead%`);
+            }
+            if (exp === 'director') {
+              clauses.push(`${columnPrefix}job_title.ilike.%director%`);
+              clauses.push(`${columnPrefix}job_title.ilike.%head%`);
+            }
+            if (exp === 'executive') {
+              clauses.push(`${columnPrefix}job_title.ilike.%executive%`);
+              clauses.push(`${columnPrefix}job_title.ilike.%vp%`);
+              clauses.push(`${columnPrefix}job_title.ilike.%chief%`);
+            }
           }
-          if (params.easy_apply === 'true') {
-            broadQuery = broadQuery.eq('is_easy_apply', true);
+
+          if (clauses.length === 0) return query;
+          return query.or(clauses.join(','));
+        }
+
+        function applyDatePostedFilter(query: any, columnPrefix: string) {
+          if (!selectedDatePosted) return query;
+          const now = Date.now();
+          let cutoffMs: number | null = null;
+          if (selectedDatePosted === 'hour') cutoffMs = now - 60 * 60 * 1000;
+          if (selectedDatePosted === 'day') cutoffMs = now - 24 * 60 * 60 * 1000;
+          if (selectedDatePosted === 'week') cutoffMs = now - 7 * 24 * 60 * 60 * 1000;
+          if (!cutoffMs) return query;
+          return query.gte(`${columnPrefix}posted_at`, new Date(cutoffMs).toISOString());
+        }
+
+        function applyEasyApplyFilter(query: any, columnPrefix: string) {
+          if (!selectedEasyApply) return query;
+          return query.eq(`${columnPrefix}is_easy_apply`, true);
+        }
+
+        function applyAllClientFilters(query: any, columnPrefix: string) {
+          let q = query;
+          q = applyWorkTypeFilter(q, columnPrefix);
+          q = applyExperienceFilter(q, columnPrefix);
+          q = applyDatePostedFilter(q, columnPrefix);
+          q = applyEasyApplyFilter(q, columnPrefix);
+          return q;
+        }
+
+        async function computeStatsForJobsTable(baseBuilder: () => any) {
+          const base = baseBuilder;
+
+          const totalQ = base().select('id', { count: 'exact', head: true });
+          const remoteQ = applyAllClientFilters(base(), '').or('work_type.ilike.%remote%').select('id', { count: 'exact', head: true });
+          const easyQ = applyAllClientFilters(base(), '').eq('is_easy_apply', true).select('id', { count: 'exact', head: true });
+          const recentQ = applyAllClientFilters(base(), '').gte('posted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).select('id', { count: 'exact', head: true });
+
+          const [totalRes, remoteRes, easyRes, recentRes] = await Promise.all([
+            totalQ,
+            remoteQ,
+            easyQ,
+            recentQ,
+          ]);
+
+          return {
+            total: totalRes.count || 0,
+            remote: remoteRes.count || 0,
+            easyApply: easyRes.count || 0,
+            recent: recentRes.count || 0,
+          };
+        }
+
+        async function computeStatsForLinksTable(baseBuilder: () => any) {
+          const base = baseBuilder;
+
+          const totalQ = base().select('job_id', { count: 'exact', head: true });
+          const remoteQ = applyAllClientFilters(base(), 'jobs.').or('jobs.work_type.ilike.%remote%').select('job_id', { count: 'exact', head: true });
+          const easyQ = applyAllClientFilters(base(), 'jobs.').eq('jobs.is_easy_apply', true).select('job_id', { count: 'exact', head: true });
+          const recentQ = applyAllClientFilters(base(), 'jobs.').gte('jobs.posted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).select('job_id', { count: 'exact', head: true });
+
+          const [totalRes, remoteRes, easyRes, recentRes] = await Promise.all([
+            totalQ,
+            remoteQ,
+            easyQ,
+            recentQ,
+          ]);
+
+          return {
+            total: totalRes.count || 0,
+            remote: remoteRes.count || 0,
+            easyApply: easyRes.count || 0,
+            recent: recentRes.count || 0,
+          };
+        }
+
+        console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, cacheOnly: ${cacheOnly}, forceRefresh: ${forceRefresh}`);
+
+        let fromCache = true;
+        let stats: any = { total: 0, remote: 0, easyApply: 0, recent: 0 };
+        let totalCount = 0;
+        let jobsPage: any[] = [];
+
+        if (isBroadSearch) {
+          // Broad search = DB-only aggregation (no paid fetch)
+          const normalizedLoc = normalizeText(location);
+          const normalizedKw = normalizeText(keywords);
+          const canonicalKw = canonicalizeKeywords(normalizedKw);
+
+          const baseBuilder = () => {
+            let q = supabase
+              .from('jobs')
+              .gt('expires_at', nowIso);
+
+            if (hasLocation && !hasKeywords) {
+              q = q.ilike('location', `%${normalizedLoc}%`);
+            }
+
+            if (hasKeywords && !hasLocation) {
+              const terms = Array.from(new Set([normalizedKw, canonicalKw].filter(Boolean)));
+              if (terms.length === 1) {
+                q = q.ilike('job_title', `%${terms[0]}%`);
+              } else {
+                q = q.or(terms.map(t => `job_title.ilike.%${t}%`).join(','));
+              }
+            }
+
+            q = applyAllClientFilters(q, '');
+            return q;
+          };
+
+          const pageQuery = baseBuilder()
+            .select('*', { count: 'exact' })
+            .order('posted_at', { ascending: false })
+            .range(startIndex, endIndex);
+
+          const { data: rows, error: qErr, count } = await pageQuery;
+          if (qErr) {
+            console.error('[Search] Broad query error:', qErr);
           }
 
-          const { data: broadResults, error: broadError } = await broadQuery.limit(500);
-
-          if (broadError) {
-            console.error('[Search] Broad search error:', broadError);
-          }
-
-          allJobs = broadResults || [];
-          console.log(`[Search] Broad search found ${allJobs.length} jobs from cache`);
-
-          // For broad searches, we don't call API - just return cached results
-          needsApiFetch = false;
-
+          jobsPage = rows || [];
+          totalCount = count || 0;
+          stats = await computeStatsForJobsTable(baseBuilder);
+          fromCache = true;
         } else {
-          // ============ SPECIFIC SEARCH MODE ============
-          // Both keyword and location provided - use canonical grouping
-          
+          // Specific search (keywords + location)
           const termGroup = await getSearchTermGroup(supabase, keywords, location);
-          canonicalTerm = termGroup.canonicalTerm;
-          canonicalSearchTermId = termGroup.canonicalSearchTermId;
-          relatedTermIds = termGroup.relatedTermIds;
-          normalizedLocation = termGroup.normalizedLocation;
+          const canonicalTerm = termGroup.canonicalTerm;
+          const canonicalSearchTermId = termGroup.canonicalSearchTermId;
+          const normalizedLocation = termGroup.normalizedLocation;
 
-          console.log(`[Search] Specific search: "${termGroup.rawTerm}" -> "${canonicalTerm}" @ "${normalizedLocation}"`);
-
-          // Check if data is stale
           const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
           const isStale = !termGroup.canonicalLastFetchedAt || termGroup.canonicalLastFetchedAt < staleThreshold;
 
-          // Build query for jobs linked to canonical term group
-          let jobQuery = supabase
-            .from('jobs')
-            .select(`
-              *,
-              job_search_links!inner(search_term_id)
-            `)
-            .gt('expires_at', new Date().toISOString())
-            .order('posted_at', { ascending: false });
+          const shouldFetch = !cacheOnly && page === 1 && (forceRefresh || isStale);
 
-          if (relatedTermIds.length > 0) {
-            jobQuery = jobQuery.in('job_search_links.search_term_id', relatedTermIds);
+          if (shouldFetch && canonicalSearchTermId) {
+            fromCache = false;
+            console.log(`[Search] Fetching from API (stale: ${isStale}, force: ${forceRefresh})`);
+
+            const inputPayload = {
+              keywords: canonicalTerm,
+              location: normalizedLocation,
+              page_number: 1,
+              // Always fetch broadly; filters are applied in DB
+              remote: "",
+              date_posted: "",
+              experienceLevel: "",
+              easy_apply: "",
+              limit: JOBS_PER_API_CALL,
+            };
+
+            try {
+              const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+              const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API`);
+
+              const storedCount = await storeJobs(supabase, newJobsArray, canonicalSearchTermId);
+              console.log(`[Search] Stored ${storedCount} jobs`);
+
+              await supabase
+                .from('search_terms')
+                .update({ last_fetched_at: new Date().toISOString() })
+                .eq('id', canonicalSearchTermId);
+            } catch (apiError: any) {
+              console.error('[Search] API fetch failed:', apiError.message);
+              // Continue with DB results
+              fromCache = true;
+            }
           }
 
-          // Apply filters
-          if (params.remote && params.remote !== '') {
-            jobQuery = jobQuery.ilike('work_type', `%${params.remote}%`);
-          }
-          if (params.easy_apply === 'true') {
-            jobQuery = jobQuery.eq('is_easy_apply', true);
-          }
+          const baseLinksBuilder = () => {
+            let q = supabase
+              .from('job_search_links')
+              .eq('search_term_id', canonicalSearchTermId)
+              .gt('jobs.expires_at', nowIso);
 
-          const { data: existingJobs, error: jobsError } = await jobQuery;
-
-          if (jobsError) {
-            console.error('[Search] Error fetching jobs:', jobsError);
-          }
-
-          allJobs = existingJobs || [];
-          console.log(`[Search] Found ${allJobs.length} jobs in DB for specific search`);
-
-          // Decide if we need to fetch from API
-          needsApiFetch = forceRefresh || isStale;
-        }
-
-        // Step 4: Fetch from API if needed (only for specific searches)
-        if (needsApiFetch && canonicalSearchTermId) {
-          console.log(`[Search] Fetching from API (force: ${forceRefresh})`);
-
-
-          const inputPayload = {
-            // Use canonical keywords for scraping to reduce “typo/plural” misses.
-            keywords: canonicalTerm,
-            location: normalizedLocation,
-            page_number: 1,
-            remote: params.remote || "",
-            date_posted: params.date_posted || "",
-            experienceLevel: params.experienceLevel || "",
-            easy_apply: params.easy_apply || "",
-            limit: JOBS_PER_API_CALL
+            // join + base filter
+            q = q.select('job_id, jobs!inner(*)', { count: 'exact' });
+            q = applyAllClientFilters(q, 'jobs.');
+            return q;
           };
 
-          try {
-            const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
-            const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-            
-            console.log(`[Search] Fetched ${newJobsArray.length} new jobs from API`);
+          const pageQuery = baseLinksBuilder()
+            .order('posted_at', { foreignTable: 'jobs', ascending: false })
+            .range(startIndex, endIndex);
 
-            // Store new jobs
-            const storedCount = await storeJobs(supabase, newJobsArray, canonicalSearchTermId);
-            console.log(`[Search] Stored ${storedCount} jobs`);
-
-            // Update last_fetched_at
-            await supabase
-              .from('search_terms')
-              .update({ last_fetched_at: new Date().toISOString() })
-              .eq('id', canonicalSearchTermId);
-
-            // Re-fetch from DB to get deduplicated results
-            const { data: updatedJobs } = await supabase
-              .from('jobs')
-              .select('*')
-              .gt('expires_at', new Date().toISOString())
-              .order('posted_at', { ascending: false });
-
-            // Filter by search term links
-            const { data: linkedJobIds } = await supabase
-              .from('job_search_links')
-              .select('job_id')
-              .in('search_term_id', relatedTermIds.length > 0 ? relatedTermIds : [canonicalSearchTermId]);
-
-            const linkedIds = new Set(linkedJobIds?.map(l => l.job_id) || []);
-            allJobs = (updatedJobs || []).filter(j => linkedIds.has(j.id));
-
-          } catch (apiError: any) {
-            console.error('[Search] API fetch failed:', apiError.message);
-            // Continue with existing DB results
+          const { data: linkRows, error: qErr, count } = await pageQuery;
+          if (qErr) {
+            console.error('[Search] Specific query error:', qErr);
           }
+
+          jobsPage = (linkRows || []).map((r: any) => r.jobs).filter(Boolean);
+          totalCount = count || 0;
+          stats = await computeStatsForLinksTable(() => {
+            // For stats we need the same join and filters, but HEAD-only
+            let q = supabase
+              .from('job_search_links')
+              .eq('search_term_id', canonicalSearchTermId)
+              .gt('jobs.expires_at', nowIso)
+              .select('job_id, jobs!inner(id)', { count: 'exact' });
+            q = applyAllClientFilters(q, 'jobs.');
+            return q;
+          });
         }
 
-        // Step 5: Apply client-side filters and paginate
-        let filteredJobs = allJobs;
-
-        // Transform jobs to match expected format
-        const transformedJobs = filteredJobs.map(job => ({
+        // Transform jobs to match expected front-end format
+        const transformedJobs = (jobsPage || []).map((job: any) => ({
+          ...(job.raw_data || {}),
           job_url: job.job_url,
           job_id: job.job_id,
           job_title: job.job_title,
@@ -584,24 +665,20 @@ serve(async (req) => {
           salary: job.salary,
           description: job.description,
           posted_time: job.posted_at_text,
+          posted_at: job.posted_at,
           is_easy_apply: job.is_easy_apply,
           applicant_count: job.applicant_count,
-          // Include raw_data fields for compatibility
-          ...(job.raw_data || {})
         }));
 
-        // Paginate
-        const paginatedJobs = transformedJobs.slice(startIndex, startIndex + pageSize);
-        const totalCount = transformedJobs.length;
-
         result = {
-          jobs: paginatedJobs,
+          jobs: transformedJobs,
           totalCount,
           page,
           pageSize,
-          totalPages: Math.ceil(totalCount / pageSize),
-          fromCache: !needsApiFetch,
-          hasMoreResults: totalCount > startIndex + pageSize
+          totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+          fromCache,
+          hasMoreResults: totalCount > startIndex + pageSize,
+          stats,
         };
         break;
       }
