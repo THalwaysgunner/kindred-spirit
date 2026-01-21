@@ -111,8 +111,8 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
   return Array.isArray(items) && items.length > 0 ? items[0] : null;
 }
 
-// Normalize search term using AI
-async function normalizeSearchTerm(supabase: any, term: string, location: string): Promise<{ canonicalTerm: string; searchTermId: string }> {
+// Get or create search term (no AI - just stores the raw term)
+async function getOrCreateSearchTerm(supabase: any, term: string, location: string): Promise<{ searchTerm: string; searchTermId: string }> {
   const normalizedInput = (term || '').toLowerCase().trim();
   const normalizedLocation = (location || '').toLowerCase().trim();
 
@@ -135,66 +135,17 @@ async function normalizeSearchTerm(supabase: any, term: string, location: string
       .eq('id', existingTerm.id);
 
     return {
-      canonicalTerm: existingTerm.canonical_term,
+      searchTerm: existingTerm.raw_term,
       searchTermId: existingTerm.id
     };
   }
 
-  // For new terms, try to call normalize-search function, or fallback to the term itself
-  try {
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (LOVABLE_API_KEY) {
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-lite',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are a job title normalizer. Convert the input to a canonical job title. Fix typos, use singular form, lowercase. Return ONLY the job title, nothing else. Examples: "data scientis" -> "data scientist", "sr software eng" -> "senior software engineer"' 
-            },
-            { role: 'user', content: normalizedInput }
-          ],
-          temperature: 0.1,
-          max_tokens: 50
-        }),
-      });
-
-      if (response.ok) {
-        const aiResult = await response.json();
-        const canonicalTerm = aiResult.choices?.[0]?.message?.content?.trim().toLowerCase().replace(/['"]/g, '') || normalizedInput;
-        
-        const { data: newTerm } = await supabase
-          .from('search_terms')
-          .insert({
-            raw_term: normalizedInput,
-            canonical_term: canonicalTerm,
-            location: normalizedLocation,
-            search_count: 1,
-            last_searched_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-
-        if (newTerm) {
-          return { canonicalTerm, searchTermId: newTerm.id };
-        }
-      }
-    }
-  } catch (e) {
-    console.log('[Normalize] AI normalization failed, using raw term');
-  }
-
-  // Fallback: use raw term
+  // Create new term (no AI normalization - just store raw term as-is)
   const { data: newTerm } = await supabase
     .from('search_terms')
     .upsert({
       raw_term: normalizedInput,
-      canonical_term: normalizedInput,
+      canonical_term: normalizedInput, // Same as raw - no AI transformation
       location: normalizedLocation,
       search_count: 1,
       last_searched_at: new Date().toISOString()
@@ -203,7 +154,7 @@ async function normalizeSearchTerm(supabase: any, term: string, location: string
     .single();
 
   return {
-    canonicalTerm: normalizedInput,
+    searchTerm: normalizedInput,
     searchTermId: newTerm?.id || ''
   };
 }
@@ -321,9 +272,9 @@ serve(async (req) => {
 
         console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, forceRefresh: ${forceRefresh}`);
 
-        // Step 1: Normalize the search term
-        const { canonicalTerm, searchTermId } = await normalizeSearchTerm(supabase, keywords, location);
-        console.log(`[Search] Canonical term: "${canonicalTerm}"`);
+        // Step 1: Get or create search term (no AI - uses raw term)
+        const { searchTerm, searchTermId } = await getOrCreateSearchTerm(supabase, keywords, location);
+        console.log(`[Search] Search term: "${searchTerm}"`);
 
         // Step 2: Check if we have fresh data
         const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
@@ -351,11 +302,11 @@ serve(async (req) => {
 
         // Filter by search term
         if (searchTermId) {
-          // Get all search terms with the same canonical term
+          // Get all search terms with the same raw term (for cache sharing)
           const { data: relatedTerms } = await supabase
             .from('search_terms')
             .select('id')
-            .eq('canonical_term', canonicalTerm);
+            .eq('raw_term', searchTerm);
 
           const termIds = relatedTerms?.map(t => t.id) || [searchTermId];
           jobQuery = jobQuery.in('job_search_links.search_term_id', termIds);
@@ -385,7 +336,7 @@ serve(async (req) => {
           console.log(`[Search] Fetching from API (stale: ${isStale}, jobs: ${allJobs.length}, force: ${forceRefresh})`);
 
           const inputPayload = {
-            keywords: canonicalTerm,
+            keywords: searchTerm, // Use raw search term - no AI transformation
             location: location,
             page_number: 1,
             remote: params.remote || "",
