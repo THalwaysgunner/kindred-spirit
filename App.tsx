@@ -9,7 +9,7 @@ import { JobSearch } from './components/JobSearch';
 import { GetReady } from './components/GetReady';
 import { ApplicationsList } from './components/ApplicationsList';
 import { ApplicationsList as InterviewPrep } from './components/InterviewPrep';
-import OnetImporter from './components/OnetImporter';
+
 import {
   LayoutDashboard,
   FileText,
@@ -784,11 +784,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <div className={`transition-all duration-300 ${view === 'applications-list' || view === 'create' || view === 'interview-prep' || view === 'search' ? 'p-0' : 'p-8 max-w-[1600px] mx-auto'} ${isChatOpen && view === 'interview-prep' ? 'mr-[384px]' : ''}`}>
               {view === 'dashboard' && (
-                <div className="space-y-6">
-                  <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />
-                  {/* O*NET Fast Importer */}
-                  {session?.user?.id && <OnetImporter />}
-                </div>
+                <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />
               )}
               {view === 'create' && (
                 <Wizard
