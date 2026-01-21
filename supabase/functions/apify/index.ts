@@ -505,52 +505,177 @@ serve(async (req) => {
         let jobsPage: any[] = [];
 
         if (isBroadSearch) {
-          // Broad search = DB-only aggregation (no paid fetch)
+          // Broad search - check cache first, then fetch from API if empty and keyword-only
           const normalizedLoc = normalizeText(location);
           const normalizedKw = normalizeText(keywords);
           const canonicalKw = canonicalizeKeywords(normalizedKw);
 
-          const baseBuilder = () => {
-            let q = supabase
-              .from('jobs')
-              .select('*', { count: 'exact' })
-              .gt('expires_at', nowIso);
+          let keywordSearchTermId: string | null = null;
 
-            if (hasLocation && !hasKeywords) {
-              q = q.ilike('location', `%${normalizedLoc}%`);
-            }
+          // For keyword-only searches, check if we have a search term and linked jobs
+          if (hasKeywords && !hasLocation) {
+            // Check for existing search term
+            const { data: existingTerm } = await supabase
+              .from('search_terms')
+              .select('id, last_fetched_at')
+              .eq('canonical_term', canonicalKw)
+              .eq('location', 'Worldwide')
+              .maybeSingle();
 
-            if (hasKeywords && !hasLocation) {
-              const terms = Array.from(new Set([normalizedKw, canonicalKw].filter(Boolean)));
-              if (terms.length === 1) {
-                q = q.ilike('job_title', `%${terms[0]}%`);
-              } else {
-                q = q.or(terms.map(t => `job_title.ilike.%${t}%`).join(','));
+            if (existingTerm) {
+              keywordSearchTermId = existingTerm.id;
+              
+              // Check if data is stale
+              const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
+              const isStale = !existingTerm.last_fetched_at || existingTerm.last_fetched_at < staleThreshold;
+              
+              if (isStale && page === 1 && !cacheOnly && !forceRefresh) {
+                console.log(`[Search] Keyword-only search - data is stale, refreshing`);
+                fromCache = false;
+
+                const inputPayload = {
+                  keywords: canonicalKw || normalizedKw,
+                  location: '',
+                  page_number: 1,
+                  remote: "",
+                  date_posted: "",
+                  experienceLevel: "",
+                  easy_apply: "",
+                  limit: JOBS_PER_API_CALL,
+                };
+
+                try {
+                  const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+                  const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+                  console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for keyword-only search`);
+
+                  const storedCount = await storeJobs(supabase, newJobsArray, keywordSearchTermId);
+                  console.log(`[Search] Stored ${storedCount} jobs`);
+
+                  await supabase
+                    .from('search_terms')
+                    .update({ last_fetched_at: new Date().toISOString() })
+                    .eq('id', keywordSearchTermId);
+                } catch (apiError: any) {
+                  console.error('[Search] API fetch failed:', apiError.message);
+                  fromCache = true;
+                }
+              }
+            } else if (page === 1 && !cacheOnly) {
+              // No existing term - create one and fetch
+              console.log(`[Search] Keyword-only search - no existing term, creating and fetching`);
+              fromCache = false;
+
+              const termGroup = await getSearchTermGroup(supabase, keywords, 'Worldwide');
+              keywordSearchTermId = termGroup.canonicalSearchTermId;
+
+              const inputPayload = {
+                keywords: canonicalKw || normalizedKw,
+                location: '',
+                page_number: 1,
+                remote: "",
+                date_posted: "",
+                experienceLevel: "",
+                easy_apply: "",
+                limit: JOBS_PER_API_CALL,
+              };
+
+              try {
+                const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+                const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+                console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for keyword-only search`);
+
+                const storedCount = await storeJobs(supabase, newJobsArray, keywordSearchTermId);
+                console.log(`[Search] Stored ${storedCount} jobs`);
+
+                await supabase
+                  .from('search_terms')
+                  .update({ last_fetched_at: new Date().toISOString() })
+                  .eq('id', keywordSearchTermId);
+              } catch (apiError: any) {
+                console.error('[Search] API fetch failed:', apiError.message);
+                fromCache = true;
               }
             }
-
-            q = applyAllClientFilters(q, '');
-            return q;
-          };
-
-          const pageQuery = baseBuilder()
-            .order('posted_at', { ascending: false })
-            .range(startIndex, endIndex);
-
-          const { data: rows, error: qErr, count } = await pageQuery;
-          if (qErr) {
-            console.error('[Search] Broad query error:', qErr);
           }
 
-          jobsPage = rows || [];
-          totalCount = count || 0;
-          
-          // Compute stats from the full filtered result (use IDs from a separate query)
-          const allIdsQuery = baseBuilder().select('id').limit(1000);
-          const { data: allIdsData } = await allIdsQuery;
-          const allIds = (allIdsData || []).map((r: any) => r.id);
-          stats = await computeStatsForJobs(allIds);
-          fromCache = true;
+          // Query jobs - use links table if we have a search term, otherwise fall back to title search
+          if (keywordSearchTermId) {
+            // Query via job_search_links for keyword-only searches
+            let jobQuery = supabase
+              .from('jobs')
+              .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+              .eq('job_search_links.search_term_id', keywordSearchTermId)
+              .gt('expires_at', nowIso);
+
+            jobQuery = applyAllClientFilters(jobQuery, '');
+
+            const pageQuery = jobQuery
+              .order('posted_at', { ascending: false })
+              .range(startIndex, endIndex);
+
+            const { data: jobRows, error: qErr, count } = await pageQuery;
+            if (qErr) {
+              console.error('[Search] Keyword-only query error:', qErr);
+            }
+
+            jobsPage = jobRows || [];
+            totalCount = count || 0;
+
+            // Get all job IDs for stats
+            const allIdsQuery = supabase
+              .from('jobs')
+              .select('id, job_search_links!inner(search_term_id)')
+              .eq('job_search_links.search_term_id', keywordSearchTermId)
+              .gt('expires_at', nowIso)
+              .limit(1000);
+
+            const allIdsFiltered = applyAllClientFilters(allIdsQuery, '');
+            const { data: allIdsData } = await allIdsFiltered;
+            const allIds = (allIdsData || []).map((r: any) => r.id);
+            stats = await computeStatsForJobs(allIds);
+          } else {
+            // Location-only or fallback title search
+            const baseBuilder = () => {
+              let q = supabase
+                .from('jobs')
+                .select('*', { count: 'exact' })
+                .gt('expires_at', nowIso);
+
+              if (hasLocation && !hasKeywords) {
+                q = q.ilike('location', `%${normalizedLoc}%`);
+              }
+
+              if (hasKeywords && !hasLocation) {
+                const terms = Array.from(new Set([normalizedKw, canonicalKw].filter(Boolean)));
+                if (terms.length === 1) {
+                  q = q.ilike('job_title', `%${terms[0]}%`);
+                } else {
+                  q = q.or(terms.map(t => `job_title.ilike.%${t}%`).join(','));
+                }
+              }
+
+              q = applyAllClientFilters(q, '');
+              return q;
+            };
+
+            const pageQuery = baseBuilder()
+              .order('posted_at', { ascending: false })
+              .range(startIndex, endIndex);
+
+            const { data: rows, error: qErr, count } = await pageQuery;
+            if (qErr) {
+              console.error('[Search] Broad query error:', qErr);
+            }
+
+            jobsPage = rows || [];
+            totalCount = count || 0;
+
+            const allIdsQuery = baseBuilder().select('id').limit(1000);
+            const { data: allIdsData } = await allIdsQuery;
+            const allIds = (allIdsData || []).map((r: any) => r.id);
+            stats = await computeStatsForJobs(allIds);
+          }
         } else {
           // Specific search (keywords + location)
           const termGroup = await getSearchTermGroup(supabase, keywords, location);
