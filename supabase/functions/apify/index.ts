@@ -183,6 +183,21 @@ function applyWorkTypeFilter(query: any, remote: string): any {
   return query;
 }
 
+function applyExperienceFilter(query: any, experienceLevel: string): any {
+  const e = normalizeText(experienceLevel);
+  if (!e) return query;
+
+  // Best-effort DB filtering (we don't store a dedicated experience_level column on jobs)
+  if (e === 'internship') return query.ilike('job_title', '%intern%');
+  if (e === 'entry') return query.or('job_title.ilike.%entry%,job_title.ilike.%junior%');
+  if (e === 'associate') return query.ilike('job_title', '%associate%');
+  if (e === 'mid_senior') return query.or('job_title.ilike.%senior%,job_title.ilike.%lead%');
+  if (e === 'director') return query.or('job_title.ilike.%director%,job_title.ilike.%head%');
+  if (e === 'executive') return query.or('job_title.ilike.%executive%,job_title.ilike.%vp%,job_title.ilike.%chief%');
+
+  return query;
+}
+
 // Store jobs in the database
 async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Promise<number> {
   let storedCount = 0;
@@ -370,6 +385,11 @@ serve(async (req) => {
         let jobsPage: any[] = [];
         let totalCount = 0;
 
+        // Stats source tracking (to compute counts on the full dataset)
+        let statsMode: 'linked' | 'direct' | 'api_fallback' = 'direct';
+        let statsSearchTermId: string | null = null;
+        let statsFallbackJobs: any[] | null = null;
+
         // ===== PATH 1: WITH KEYWORD =====
         if (hasKeywords) {
           // Step 1: Check exact raw term match in search_terms
@@ -406,6 +426,8 @@ serve(async (req) => {
 
           // Query jobs if we have a search term
           if (searchTermId) {
+            statsMode = 'linked';
+            statsSearchTermId = searchTermId;
             let jobQuery = supabase
               .from('jobs')
               .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
@@ -413,6 +435,7 @@ serve(async (req) => {
               .gt('expires_at', nowIso);
 
             jobQuery = applyWorkTypeFilter(jobQuery, remote);
+            jobQuery = applyExperienceFilter(jobQuery, experienceLevel);
 
             // Apply location filter if provided
             if (hasLocation) {
@@ -459,6 +482,8 @@ serve(async (req) => {
               console.log(`[Search] Fetched ${newJobsArray.length} jobs from API`);
 
               if (newTermId) {
+                statsMode = 'linked';
+                statsSearchTermId = newTermId;
                 const storedCount = await storeJobs(supabase, newJobsArray, newTermId);
                 console.log(`[Search] Stored ${storedCount} jobs`);
 
@@ -476,6 +501,7 @@ serve(async (req) => {
                   .gt('expires_at', nowIso);
 
                 refetchQuery = applyWorkTypeFilter(refetchQuery, remote);
+                refetchQuery = applyExperienceFilter(refetchQuery, experienceLevel);
 
                 if (hasLocation) {
                   refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
@@ -489,6 +515,8 @@ serve(async (req) => {
                 totalCount = refetchCount || 0;
               } else {
                 // If we couldn't create a search term, still return API results
+                statsMode = 'api_fallback';
+                statsFallbackJobs = newJobsArray;
                 jobsPage = newJobsArray.slice(startIndex, endIndex + 1);
                 totalCount = newJobsArray.length;
               }
@@ -500,7 +528,7 @@ serve(async (req) => {
         }
         // ===== PATH 2: WITHOUT KEYWORD (location only) =====
         else {
-          // Location-only (and/or remote/experience) searches are cached by an empty term + filters.
+          // Option 2 (NO keyword): first try cached term; if missing, filter the jobs table directly by the combination.
           const termLocation = hasLocation ? normalizedLocation : '';
           let searchTermId: string | null = null;
 
@@ -515,10 +543,13 @@ serve(async (req) => {
 
           if (locationTerm) {
             searchTermId = locationTerm.id;
-            console.log(`[Search] Found location-only term match: ${searchTermId}`);
+            console.log(`[Search] Found no-keyword term match: ${searchTermId}`);
           }
 
           if (searchTermId) {
+            statsMode = 'linked';
+            statsSearchTermId = searchTermId;
+
             let jobQuery = supabase
               .from('jobs')
               .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
@@ -526,6 +557,7 @@ serve(async (req) => {
               .gt('expires_at', nowIso);
 
             jobQuery = applyWorkTypeFilter(jobQuery, remote);
+            jobQuery = applyExperienceFilter(jobQuery, experienceLevel);
 
             if (hasLocation) {
               jobQuery = jobQuery.ilike('location', `%${normalizedLocation}%`);
@@ -537,12 +569,36 @@ serve(async (req) => {
 
             jobsPage = jobRows || [];
             totalCount = count || 0;
-            console.log(`[Search] Found ${totalCount} jobs from cache (location-only)`);
+            console.log(`[Search] Found ${totalCount} jobs from term cache (no-keyword)`);
+          } else {
+            // DB filter fallback (this is the behavior you requested)
+            statsMode = 'direct';
+            statsSearchTermId = null;
+
+            let jobQuery = supabase
+              .from('jobs')
+              .select('*', { count: 'exact' })
+              .gt('expires_at', nowIso);
+
+            jobQuery = applyWorkTypeFilter(jobQuery, remote);
+            jobQuery = applyExperienceFilter(jobQuery, experienceLevel);
+
+            if (hasLocation) {
+              jobQuery = jobQuery.ilike('location', `%${normalizedLocation}%`);
+            }
+
+            const { data: jobRows, count } = await jobQuery
+              .order('posted_at', { ascending: false })
+              .range(startIndex, endIndex);
+
+            jobsPage = jobRows || [];
+            totalCount = count || 0;
+            console.log(`[Search] Found ${totalCount} jobs by DB filter fallback (no-keyword)`);
           }
 
           // If not enough results, go to API
           if (totalCount < MIN_PAGE_SIZE && page === 1 && !forceRefresh) {
-            console.log(`[Search] Not enough location-only results (${totalCount}), fetching from API`);
+            console.log(`[Search] Not enough no-keyword results (${totalCount}), fetching from API`);
             fromCache = false;
 
             const newTermId = await getOrCreateSearchTerm(
@@ -567,9 +623,12 @@ serve(async (req) => {
             try {
               const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
               const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for location-only`);
+              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API (no-keyword)`);
 
               if (newTermId) {
+                statsMode = 'linked';
+                statsSearchTermId = newTermId;
+
                 const storedCount = await storeJobs(supabase, newJobsArray, newTermId);
                 console.log(`[Search] Stored ${storedCount} jobs`);
 
@@ -586,6 +645,7 @@ serve(async (req) => {
                   .gt('expires_at', nowIso);
 
                 refetchQuery = applyWorkTypeFilter(refetchQuery, remote);
+                refetchQuery = applyExperienceFilter(refetchQuery, experienceLevel);
 
                 if (hasLocation) {
                   refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
@@ -598,6 +658,8 @@ serve(async (req) => {
                 jobsPage = refetchRows || [];
                 totalCount = refetchCount || 0;
               } else {
+                statsMode = 'api_fallback';
+                statsFallbackJobs = newJobsArray;
                 jobsPage = newJobsArray.slice(startIndex, endIndex + 1);
                 totalCount = newJobsArray.length;
               }
@@ -626,15 +688,60 @@ serve(async (req) => {
           applicant_count: job.applicant_count,
         }));
 
-        // Compute basic stats from results
+        // Stats must reflect the FULL dataset for the Row 2 query (not just the current page)
+        const recentCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+        let remoteCount = 0;
+        let easyApplyCount = 0;
+        let recentCount = 0;
+
+        if (statsMode === 'api_fallback' && Array.isArray(statsFallbackJobs)) {
+          remoteCount = statsFallbackJobs.filter((j: any) => (j.work_type || j.remote || '').toLowerCase().includes('remote')).length;
+          easyApplyCount = statsFallbackJobs.filter((j: any) => j.is_easy_apply || j.easy_apply).length;
+          recentCount = statsFallbackJobs.filter((j: any) => {
+            const dt = parsePostedDate(j.posted_time || j.posted_at_text || '');
+            return dt.toISOString() >= recentCutoffIso;
+          }).length;
+        } else {
+          const makeCountBase = () => {
+            if (statsMode === 'linked' && statsSearchTermId) {
+              let q = supabase
+                .from('jobs')
+                .select('id, job_search_links!inner(search_term_id)', { count: 'exact', head: true })
+                .eq('job_search_links.search_term_id', statsSearchTermId)
+                .gt('expires_at', nowIso);
+
+              q = applyWorkTypeFilter(q, remote);
+              q = applyExperienceFilter(q, experienceLevel);
+              if (hasLocation) q = q.ilike('location', `%${normalizedLocation}%`);
+              return q;
+            }
+
+            let q = supabase
+              .from('jobs')
+              .select('id', { count: 'exact', head: true })
+              .gt('expires_at', nowIso);
+
+            q = applyWorkTypeFilter(q, remote);
+            q = applyExperienceFilter(q, experienceLevel);
+            if (hasLocation) q = q.ilike('location', `%${normalizedLocation}%`);
+            return q;
+          };
+
+          const { count: rCount } = await makeCountBase().ilike('work_type', '%remote%');
+          const { count: eCount } = await makeCountBase().eq('is_easy_apply', true);
+          const { count: recCount } = await makeCountBase().gte('posted_at', recentCutoffIso);
+
+          remoteCount = rCount || 0;
+          easyApplyCount = eCount || 0;
+          recentCount = recCount || 0;
+        }
+
         const stats = {
           total: totalCount,
-          remote: transformedJobs.filter((j: any) => (j.work_type || '').toLowerCase().includes('remote')).length,
-          easyApply: transformedJobs.filter((j: any) => j.is_easy_apply).length,
-          recent: transformedJobs.filter((j: any) => {
-            const postedAt = j.posted_at ? new Date(j.posted_at).getTime() : 0;
-            return postedAt >= Date.now() - 24 * 60 * 60 * 1000;
-          }).length,
+          remote: remoteCount,
+          easyApply: easyApplyCount,
+          recent: recentCount,
         };
 
         result = {
