@@ -260,8 +260,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   }, []);
 
   // Filter results based on client-side filters (multi-select work types, experiences, date, easy apply)
+  // Then sort by posted date (newest first)
   const filteredResults = useMemo(() => {
-    return results.filter(job => {
+    const filtered = results.filter(job => {
       // Work type filter (multi-select)
       if (selectedWorkTypes.length > 0) {
         const workType = job.work_type?.toLowerCase() || '';
@@ -301,6 +302,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       if (easyApplyFilter && !job.is_easy_apply) return false;
 
       return true;
+    });
+
+    // Sort by posted date (newest first)
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.posted_at || 0).getTime();
+      const dateB = new Date(b.posted_at || 0).getTime();
+      return dateB - dateA; // Descending (newest first)
     });
   }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
