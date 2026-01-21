@@ -279,13 +279,13 @@ serve(async (req) => {
         // Step 2: Check if we have fresh data
         const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
         
-        const { data: searchTerm } = await supabase
+        const { data: searchTermRow } = await supabase
           .from('search_terms')
           .select('*')
           .eq('id', searchTermId)
           .single();
 
-        const isStale = !searchTerm?.last_fetched_at || searchTerm.last_fetched_at < staleThreshold;
+        const isStale = !searchTermRow?.last_fetched_at || searchTermRow.last_fetched_at < staleThreshold;
 
         // Step 3: Get existing jobs from DB
         const startIndex = (page - 1) * pageSize;
