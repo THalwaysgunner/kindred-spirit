@@ -195,10 +195,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       setTotalPages(response.totalPages);
       setCurrentPage(response.page);
       setFromCache(response.fromCache);
-      
-      if (response.jobs.length > 0 && page === 1) {
-        setSelectedJob(response.jobs[0]);
-      }
     } catch (err) {
       setError("Failed to fetch jobs. Please try different keywords or try again later.");
       console.error(err);
