@@ -160,6 +160,29 @@ function canonicalizeKeywords(raw: string): string {
   return s;
 }
 
+function buildSearchFilters(remote: string, experienceLevel: string): any {
+  const filters: any = {};
+  const r = normalizeText(remote);
+  const e = normalizeText(experienceLevel);
+  if (r) filters.remote = r;
+  if (e) filters.experienceLevel = e;
+  return filters;
+}
+
+function applyWorkTypeFilter(query: any, remote: string): any {
+  const r = normalizeText(remote);
+  if (!r) return query;
+
+  if (r === 'remote') return query.ilike('work_type', '%remote%');
+  if (r === 'hybrid') return query.ilike('work_type', '%hybrid%');
+  if (r === 'onsite' || r === 'on-site' || r === 'on site') {
+    // Match common variants
+    return query.or('work_type.ilike.%on-site%,work_type.ilike.%onsite%,work_type.ilike.%on site%');
+  }
+
+  return query;
+}
+
 // Store jobs in the database
 async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Promise<number> {
   let storedCount = 0;
@@ -216,23 +239,31 @@ async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Prom
 }
 
 // Get or create search term
-async function getOrCreateSearchTerm(supabase: any, rawTerm: string, canonicalTerm: string, location: string): Promise<string | null> {
+async function getOrCreateSearchTerm(
+  supabase: any,
+  rawTerm: string,
+  canonicalTerm: string,
+  location: string,
+  filters: any
+): Promise<string | null> {
   const normalizedLoc = normalizeText(location);
   
   // Try to find existing term
   const { data: existing } = await supabase
     .from('search_terms')
-    .select('id')
+    .select('id, search_count')
     .eq('canonical_term', canonicalTerm)
     .eq('location', normalizedLoc)
+    .eq('filters', filters)
     .maybeSingle();
 
   if (existing) {
     // Increment search count
+    const nextCount = (existing.search_count || 0) + 1;
     await supabase
       .from('search_terms')
       .update({ 
-        search_count: supabase.raw('search_count + 1'),
+        search_count: nextCount,
         last_searched_at: new Date().toISOString()
       })
       .eq('id', existing.id);
@@ -246,6 +277,7 @@ async function getOrCreateSearchTerm(supabase: any, rawTerm: string, canonicalTe
       raw_term: rawTerm,
       canonical_term: canonicalTerm,
       location: normalizedLoc,
+      filters,
       search_count: 1,
       last_searched_at: new Date().toISOString()
     })
@@ -315,6 +347,8 @@ serve(async (req) => {
         const forceRefresh = !!params.forceRefresh;
         const keywords = (params.keywords || '').trim();
         const location = (params.location || '').trim();
+        const remote = (params.remote || '').trim();
+        const experienceLevel = (params.experienceLevel || '').trim();
 
         const nowIso = new Date().toISOString();
         const startIndex = (page - 1) * pageSize;
@@ -326,8 +360,11 @@ serve(async (req) => {
         const normalizedKeywords = normalizeText(keywords);
         const canonicalKeywords = canonicalizeKeywords(normalizedKeywords);
         const normalizedLocation = normalizeText(location);
+        const filters = buildSearchFilters(remote, experienceLevel);
 
-        console.log(`[Search] Query: "${keywords}" (canonical: "${canonicalKeywords}") in "${location}", page ${page}`);
+        console.log(
+          `[Search] Query: "${keywords}" (canonical: "${canonicalKeywords}") in "${location}" | remote="${remote}" exp="${experienceLevel}" | page ${page}`
+        );
 
         let fromCache = true;
         let jobsPage: any[] = [];
@@ -343,6 +380,7 @@ serve(async (req) => {
             .select('id')
             .eq('raw_term', normalizedKeywords)
             .eq('location', hasLocation ? normalizedLocation : '')
+            .eq('filters', filters)
             .maybeSingle();
 
           if (exactTerm) {
@@ -357,6 +395,7 @@ serve(async (req) => {
               .select('id')
               .eq('canonical_term', canonicalKeywords)
               .eq('location', hasLocation ? normalizedLocation : '')
+              .eq('filters', filters)
               .maybeSingle();
 
             if (canonicalTermData) {
@@ -372,6 +411,8 @@ serve(async (req) => {
               .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
               .eq('job_search_links.search_term_id', searchTermId)
               .gt('expires_at', nowIso);
+
+            jobQuery = applyWorkTypeFilter(jobQuery, remote);
 
             // Apply location filter if provided
             if (hasLocation) {
@@ -397,16 +438,17 @@ serve(async (req) => {
               supabase, 
               normalizedKeywords, 
               canonicalKeywords, 
-              hasLocation ? normalizedLocation : ''
+              hasLocation ? normalizedLocation : '',
+              filters
             );
 
             const inputPayload = {
               keywords: keywords, // Use ORIGINAL keywords for API
               location: location,
               page_number: 1,
-              remote: "",
+              remote: remote || "",
               date_posted: "",
-              experienceLevel: "",
+              experienceLevel: experienceLevel || "",
               easy_apply: "",
               limit: JOBS_PER_API_CALL,
             };
@@ -425,25 +467,31 @@ serve(async (req) => {
                   .from('search_terms')
                   .update({ last_fetched_at: new Date().toISOString() })
                   .eq('id', newTermId);
+
+                // Re-query after storing
+                let refetchQuery = supabase
+                  .from('jobs')
+                  .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+                  .eq('job_search_links.search_term_id', newTermId)
+                  .gt('expires_at', nowIso);
+
+                refetchQuery = applyWorkTypeFilter(refetchQuery, remote);
+
+                if (hasLocation) {
+                  refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
+                }
+
+                const { data: refetchRows, count: refetchCount } = await refetchQuery
+                  .order('posted_at', { ascending: false })
+                  .range(startIndex, endIndex);
+
+                jobsPage = refetchRows || [];
+                totalCount = refetchCount || 0;
+              } else {
+                // If we couldn't create a search term, still return API results
+                jobsPage = newJobsArray.slice(startIndex, endIndex + 1);
+                totalCount = newJobsArray.length;
               }
-
-              // Re-query after storing
-              let refetchQuery = supabase
-                .from('jobs')
-                .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
-                .eq('job_search_links.search_term_id', newTermId)
-                .gt('expires_at', nowIso);
-
-              if (hasLocation) {
-                refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
-              }
-
-              const { data: refetchRows, count: refetchCount } = await refetchQuery
-                .order('posted_at', { ascending: false })
-                .range(startIndex, endIndex);
-
-              jobsPage = refetchRows || [];
-              totalCount = refetchCount || 0;
             } catch (apiError: any) {
               console.error('[Search] API fetch failed:', apiError.message);
               fromCache = true;
@@ -451,42 +499,67 @@ serve(async (req) => {
           }
         }
         // ===== PATH 2: WITHOUT KEYWORD (location only) =====
-        else if (hasLocation) {
-          // Query jobs by location directly
-          let jobQuery = supabase
-            .from('jobs')
-            .select('*', { count: 'exact' })
-            .ilike('location', `%${normalizedLocation}%`)
-            .gt('expires_at', nowIso);
+        else {
+          // Location-only (and/or remote/experience) searches are cached by an empty term + filters.
+          const termLocation = hasLocation ? normalizedLocation : '';
+          let searchTermId: string | null = null;
 
-          const { data: jobRows, count } = await jobQuery
-            .order('posted_at', { ascending: false })
-            .range(startIndex, endIndex);
+          const { data: locationTerm } = await supabase
+            .from('search_terms')
+            .select('id')
+            .eq('raw_term', '')
+            .eq('canonical_term', '')
+            .eq('location', termLocation)
+            .eq('filters', filters)
+            .maybeSingle();
 
-          jobsPage = jobRows || [];
-          totalCount = count || 0;
-          console.log(`[Search] Found ${totalCount} jobs for location: ${location}`);
+          if (locationTerm) {
+            searchTermId = locationTerm.id;
+            console.log(`[Search] Found location-only term match: ${searchTermId}`);
+          }
+
+          if (searchTermId) {
+            let jobQuery = supabase
+              .from('jobs')
+              .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+              .eq('job_search_links.search_term_id', searchTermId)
+              .gt('expires_at', nowIso);
+
+            jobQuery = applyWorkTypeFilter(jobQuery, remote);
+
+            if (hasLocation) {
+              jobQuery = jobQuery.ilike('location', `%${normalizedLocation}%`);
+            }
+
+            const { data: jobRows, count } = await jobQuery
+              .order('posted_at', { ascending: false })
+              .range(startIndex, endIndex);
+
+            jobsPage = jobRows || [];
+            totalCount = count || 0;
+            console.log(`[Search] Found ${totalCount} jobs from cache (location-only)`);
+          }
 
           // If not enough results, go to API
           if (totalCount < MIN_PAGE_SIZE && page === 1 && !forceRefresh) {
-            console.log(`[Search] Not enough location results (${totalCount}), fetching from API`);
+            console.log(`[Search] Not enough location-only results (${totalCount}), fetching from API`);
             fromCache = false;
 
-            // Create search term for location-only search
             const newTermId = await getOrCreateSearchTerm(
               supabase,
               '',
               '',
-              normalizedLocation
+              termLocation,
+              filters
             );
 
             const inputPayload = {
               keywords: '',
               location: location, // Use ORIGINAL location for API
               page_number: 1,
-              remote: "",
+              remote: remote || "",
               date_posted: "",
-              experienceLevel: "",
+              experienceLevel: experienceLevel || "",
               easy_apply: "",
               limit: JOBS_PER_API_CALL,
             };
@@ -494,7 +567,7 @@ serve(async (req) => {
             try {
               const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
               const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for location`);
+              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for location-only`);
 
               if (newTermId) {
                 const storedCount = await storeJobs(supabase, newJobsArray, newTermId);
@@ -504,19 +577,30 @@ serve(async (req) => {
                   .from('search_terms')
                   .update({ last_fetched_at: new Date().toISOString() })
                   .eq('id', newTermId);
+
+                // Re-query after storing
+                let refetchQuery = supabase
+                  .from('jobs')
+                  .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+                  .eq('job_search_links.search_term_id', newTermId)
+                  .gt('expires_at', nowIso);
+
+                refetchQuery = applyWorkTypeFilter(refetchQuery, remote);
+
+                if (hasLocation) {
+                  refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
+                }
+
+                const { data: refetchRows, count: refetchCount } = await refetchQuery
+                  .order('posted_at', { ascending: false })
+                  .range(startIndex, endIndex);
+
+                jobsPage = refetchRows || [];
+                totalCount = refetchCount || 0;
+              } else {
+                jobsPage = newJobsArray.slice(startIndex, endIndex + 1);
+                totalCount = newJobsArray.length;
               }
-
-              // Re-query after storing
-              const { data: refetchRows, count: refetchCount } = await supabase
-                .from('jobs')
-                .select('*', { count: 'exact' })
-                .ilike('location', `%${normalizedLocation}%`)
-                .gt('expires_at', nowIso)
-                .order('posted_at', { ascending: false })
-                .range(startIndex, endIndex);
-
-              jobsPage = refetchRows || [];
-              totalCount = refetchCount || 0;
             } catch (apiError: any) {
               console.error('[Search] API fetch failed:', apiError.message);
               fromCache = true;

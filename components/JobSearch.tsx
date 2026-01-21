@@ -67,7 +67,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [serverStats, setServerStats] = useState<{ total: number; remote: number; easyApply: number; recent: number } | null>(null);
   const pageSize = 20;
 
-  // Row 2 - Fetch variables (ONLY keywords and location - sent to API)
+  // Row 2 - Fetch variables (sent to API/DB; NOT connected to Row 1 UI filters)
   const [searchKeywords, setSearchKeywords] = useState('');
   const [searchLocation, setSearchLocation] = useState('');
   const [fetchWorkType, setFetchWorkType] = useState('');
@@ -574,7 +574,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           )}
         </div>
 
-        {/* Row 2: Search Bar - FETCH VARIABLES ONLY (Keywords + Location) */}
+        {/* Row 2: Search Bar - FETCH VARIABLES ONLY (API/DB params; not UI filters) */}
         <div className="flex items-center justify-between px-8 py-5 w-full min-w-[1200px]">
           <div className="flex items-center gap-4 shrink-0">
             <div className="relative group w-80 min-w-80">
