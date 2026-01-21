@@ -53,6 +53,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const filterExperienceRef = useRef<HTMLDivElement>(null);
   const filterDateRef = useRef<HTMLDivElement>(null);
 
+  // Row 2 dropdowns (FETCH VARS ONLY)
+  const [openFetchDropdown, setOpenFetchDropdown] = useState<'remote' | 'experience' | null>(null);
+  const fetchRemoteRef = useRef<HTMLDivElement>(null);
+  const fetchExperienceRef = useRef<HTMLDivElement>(null);
+
   // Row 1 client-side filter state (ONLY for filtering displayed results - NOT sent to API)
   const [clientWorkTypes, setClientWorkTypes] = useState<string[]>([]);
   const [clientExperiences, setClientExperiences] = useState<string[]>([]);
@@ -152,7 +157,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
   // Fetch jobs from API - Row 2 variables only (NOT Row 1 filters)
   const handleSearch = async (page: number = 1, forceRefresh: boolean = false) => {
-    if (!searchKeywords && !searchLocation) return;
+    const hasAnyRow2Param = !!(
+      searchKeywords.trim() ||
+      searchLocation.trim() ||
+      fetchWorkType.trim() ||
+      fetchExperienceLevel.trim()
+    );
+    if (!hasAnyRow2Param) return;
 
     setLoading(true);
     setError(null);
@@ -321,14 +332,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
   // Stats based on filtered results (client-side)
   const stats = useMemo(() => {
-    const total = filteredResults.length;
-    const remote = filteredResults.filter(j => (j.work_type || '').toLowerCase().includes('remote')).length;
-    const easyApply = filteredResults.filter(j => j.is_easy_apply).length;
-    const recentCutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const recent = filteredResults.filter(j => {
-      const postedAt = j.posted_at ? new Date(j.posted_at).getTime() : 0;
-      return postedAt >= recentCutoff;
-    }).length;
+    // IMPORTANT: Stat cards reflect the full Row 2 dataset (server totals), not the current page / Row 1 filters.
+    const total = serverStats?.total ?? totalCount;
+    const remote = serverStats?.remote ?? 0;
+    const easyApply = serverStats?.easyApply ?? 0;
+    const recent = serverStats?.recent ?? 0;
 
     return [
       { label: 'Showing', value: total, growth: '', trend: 'up' },
@@ -336,7 +344,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [filteredResults]);
+  }, [serverStats, totalCount]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -353,6 +361,15 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         }
       }
 
+      // Close Row 2 dropdowns
+      if (openFetchDropdown) {
+        const fetchRemoteContains = !!fetchRemoteRef.current?.contains(targetNode);
+        const fetchExpContains = !!fetchExperienceRef.current?.contains(targetNode);
+        if (!fetchRemoteContains && !fetchExpContains) {
+          setOpenFetchDropdown(null);
+        }
+      }
+
       if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
         const target = event.target as HTMLElement;
         if (!target.closest('tr[data-job-row]')) {
@@ -362,7 +379,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedJob, openFilterDropdown]);
+  }, [selectedJob, openFilterDropdown, openFetchDropdown]);
 
   return (
     <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden min-w-[1200px]">
@@ -630,54 +647,94 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               />
             </div>
 
-            {/* Row 2 Work Type (sent to API/DB; not connected to Row 1 UI filters) */}
-            <div className="relative group w-44 min-w-44">
+            {/* Row 2 Work Type (custom dropdown; sent to API/DB; NOT connected to Row 1) */}
+            <div ref={fetchRemoteRef} className="relative w-36 min-w-36">
               <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <select
-                value={fetchWorkType}
-                onChange={(e) => setFetchWorkType(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200"
+              <button
+                type="button"
+                onClick={() => setOpenFetchDropdown(openFetchDropdown === 'remote' ? null : 'remote')}
+                className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200 text-left"
               >
-                {remoteOptions.map((opt) => (
-                  <option key={opt.value || 'empty'} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <span className="block truncate">{getOptionLabel(remoteOptions, fetchWorkType)}</span>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              </button>
+              {openFetchDropdown === 'remote' && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  {remoteOptions.map((opt) => {
+                    const selected = opt.value === fetchWorkType;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFetchWorkType(opt.value);
+                          setOpenFetchDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Row 2 Experience Level (sent to API/DB; not connected to Row 1 UI filters) */}
-            <div className="relative group w-52 min-w-52">
+            {/* Row 2 Experience Level (custom dropdown; sent to API/DB; NOT connected to Row 1) */}
+            <div ref={fetchExperienceRef} className="relative w-36 min-w-36">
               <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <select
-                value={fetchExperienceLevel}
-                onChange={(e) => setFetchExperienceLevel(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200"
+              <button
+                type="button"
+                onClick={() => setOpenFetchDropdown(openFetchDropdown === 'experience' ? null : 'experience')}
+                className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all text-slate-600 dark:text-slate-200 text-left"
               >
-                {experienceOptions.map((opt) => (
-                  <option key={opt.value || 'empty'} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <span className="block truncate">{getOptionLabel(experienceOptions, fetchExperienceLevel)}</span>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              </button>
+              {openFetchDropdown === 'experience' && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  {experienceOptions.map((opt) => {
+                    const selected = opt.value === fetchExperienceLevel;
+                    return (
+                      <button
+                        key={opt.value || 'empty'}
+                        type="button"
+                        onClick={() => {
+                          setFetchExperienceLevel(opt.value);
+                          setOpenFetchDropdown(null);
+                        }}
+                        className={
+                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          (selected
+                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <button
               type="button"
               onClick={() => handleSearch(1)}
-              disabled={loading || (!searchKeywords && !searchLocation)}
+              disabled={
+                loading ||
+                !(searchKeywords.trim() || searchLocation.trim() || fetchWorkType.trim() || fetchExperienceLevel.trim())
+              }
               className="px-6 py-2.5 bg-[#FF6B00] hover:bg-[#E55A00] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium tracking-wider transition-colors flex items-center gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               Search
             </button>
           </div>
-
-          {/* Results info */}
-          {rawResults.length > 0 && (
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {fromCache ? 'From cache' : 'Fresh results'} • Page {currentPage} of {totalPages}
-            </div>
-          )}
         </div>
 
         {/* Results Table */}
@@ -717,6 +774,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                     <th className="pb-3 font-normal">Salary</th>
                     <th className="pb-3 font-normal">Easy Apply</th>
                     <th className="pb-3 font-normal">Link</th>
+                    <th className="pb-3 font-normal">CV</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -785,6 +843,19 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                           <ExternalLink className="w-4 h-4" />
                         </a>
                       </td>
+                      <td className="py-4">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAnalyzeJob(job);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-[#FF6B00] hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 transition-colors text-xs font-medium"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Create CV
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -792,7 +863,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
+                <div className="flex items-center justify-end gap-2 mt-6">
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage <= 1 || loading}
