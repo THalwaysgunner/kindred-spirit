@@ -9,7 +9,7 @@ import { JobSearch } from './components/JobSearch';
 import { GetReady } from './components/GetReady';
 import { ApplicationsList } from './components/ApplicationsList';
 import { ApplicationsList as InterviewPrep } from './components/InterviewPrep';
-import { SqlImporter } from './components/SqlImporter';
+import OnetImporter from './components/OnetImporter';
 import {
   LayoutDashboard,
   FileText,
@@ -786,8 +786,8 @@ export default function App() {
               {view === 'dashboard' && (
                 <div className="space-y-6">
                   <Dashboard onNew={() => setView('create')} applications={applications} onView={handleViewApplication} />
-                  {/* Temp SQL Importer */}
-                  {session?.user?.id && <SqlImporter userId={session.user.id} />}
+                  {/* O*NET Fast Importer */}
+                  {session?.user?.id && <OnetImporter />}
                 </div>
               )}
               {view === 'create' && (

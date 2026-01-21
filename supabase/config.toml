@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.import-sql-zip]
 verify_jwt = false
+
+[functions.import-onet-fast]
+verify_jwt = false
