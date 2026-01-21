@@ -15,9 +15,7 @@ const ACTOR_LINKEDIN_PROFILE = 'apimaestro~linkedin-profile-detail';
 
 // Config
 const JOBS_PER_API_CALL = 100;
-const STALE_HOURS = 24; // Consider data stale after 24 hours
-// NOTE: We intentionally do NOT refetch based on “too few jobs”.
-// Refetching on small result sets can cause repeated paid scrapes for niche queries.
+const MIN_PAGE_SIZE = 20; // Minimum jobs needed, otherwise go to API
 
 // Parse relative date strings like "2 days ago" into actual timestamps
 function parsePostedDate(postedText: string): Date {
@@ -112,7 +110,7 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
   return Array.isArray(items) && items.length > 0 ? items[0] : null;
 }
 
-// Get or create search term (no AI - just stores the raw term)
+// Text normalization
 function normalizeText(input: string): string {
   return (input || '')
     .toLowerCase()
@@ -128,13 +126,11 @@ function singularizeLastWord(phrase: string): string {
 
   const last = parts[parts.length - 1];
 
-  // companies -> company
   if (last.length > 3 && /ies$/.test(last)) {
     parts[parts.length - 1] = last.replace(/ies$/, 'y');
     return parts.join(' ');
   }
 
-  // engineers -> engineer (avoid business -> busines by skipping *ss)
   if (last.length > 3 && /s$/.test(last) && !/ss$/.test(last)) {
     parts[parts.length - 1] = last.replace(/s$/, '');
   }
@@ -150,7 +146,7 @@ function canonicalizeKeywords(raw: string): string {
   s = s.replace(/\benginier\b/g, 'engineer');
   s = s.replace(/\bdevoloper\b/g, 'developer');
 
-  // Common abbreviation expansions (keep conservative)
+  // Common abbreviation expansions
   s = s.replace(/\bsr\b/g, 'senior');
   s = s.replace(/\bjr\b/g, 'junior');
   s = s.replace(/\beng\b/g, 'engineer');
@@ -162,113 +158,6 @@ function canonicalizeKeywords(raw: string): string {
   s = s.replace(/\s+/g, ' ').trim();
   s = singularizeLastWord(s);
   return s;
-}
-
-async function upsertOrIncrementSearchTerm(
-  supabase: any,
-  payload: { raw_term: string; canonical_term: string; location: string }
-): Promise<any> {
-  const nowIso = new Date().toISOString();
-
-  const { data: existing } = await supabase
-    .from('search_terms')
-    .select('*')
-    .eq('raw_term', payload.raw_term)
-    .eq('location', payload.location)
-    .maybeSingle();
-
-  if (existing) {
-    const nextCount = (existing.search_count || 0) + 1;
-    const update: any = {
-      search_count: nextCount,
-      last_searched_at: nowIso,
-    };
-    if (!existing.canonical_term || existing.canonical_term !== payload.canonical_term) {
-      update.canonical_term = payload.canonical_term;
-    }
-
-    const { data: updated, error: updateError } = await supabase
-      .from('search_terms')
-      .update(update)
-      .eq('id', existing.id)
-      .select()
-      .single();
-
-    if (updateError) throw updateError;
-    return updated;
-  }
-
-  const { data: inserted, error: insertError } = await supabase
-    .from('search_terms')
-    .upsert(
-      {
-        raw_term: payload.raw_term,
-        canonical_term: payload.canonical_term,
-        location: payload.location,
-        search_count: 1,
-        last_searched_at: nowIso,
-      },
-      { onConflict: 'raw_term,location' }
-    )
-    .select()
-    .single();
-
-  if (insertError) throw insertError;
-  return inserted;
-}
-
-// Returns a canonical group for caching: all raw variants that share the same canonical_term.
-async function getSearchTermGroup(
-  supabase: any,
-  term: string,
-  location: string
-): Promise<{
-  rawTerm: string;
-  canonicalTerm: string;
-  canonicalSearchTermId: string;
-  relatedTermIds: string[];
-  canonicalLastFetchedAt: string | null;
-  normalizedLocation: string;
-}> {
-  const rawTerm = normalizeText(term);
-  const normalizedLocation = normalizeText(location);
-
-  // 1) Compute canonical term (deterministic + conservative)
-  const canonicalTerm = canonicalizeKeywords(rawTerm) || rawTerm;
-
-  // 2) Track the raw term → canonical mapping (analytics + learning)
-  await upsertOrIncrementSearchTerm(supabase, {
-    raw_term: rawTerm,
-    canonical_term: canonicalTerm,
-    location: normalizedLocation,
-  });
-
-  // 3) Ensure a dedicated canonical row exists (we link cached jobs to this ID)
-  const canonicalRow = await upsertOrIncrementSearchTerm(supabase, {
-    raw_term: canonicalTerm,
-    canonical_term: canonicalTerm,
-    location: normalizedLocation,
-  });
-
-  // 4) Fetch all term IDs that map to the canonical (for backwards compatibility)
-  const { data: relatedTerms } = await supabase
-    .from('search_terms')
-    .select('id')
-    .eq('canonical_term', canonicalTerm)
-    .eq('location', normalizedLocation);
-
-  const relatedTermIds = Array.from(
-    new Set([canonicalRow?.id, ...(relatedTerms || []).map((t: any) => t.id)].filter(Boolean))
-  );
-
-  return {
-    rawTerm,
-    canonicalTerm,
-    canonicalSearchTermId: canonicalRow?.id || '',
-    relatedTermIds,
-    canonicalLastFetchedAt: canonicalRow?.last_fetched_at || null,
-    normalizedLocation,
-  };
 }
 
 // Store jobs in the database
@@ -326,6 +215,51 @@ async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Prom
   return storedCount;
 }
 
+// Get or create search term
+async function getOrCreateSearchTerm(supabase: any, rawTerm: string, canonicalTerm: string, location: string): Promise<string | null> {
+  const normalizedLoc = normalizeText(location);
+  
+  // Try to find existing term
+  const { data: existing } = await supabase
+    .from('search_terms')
+    .select('id')
+    .eq('canonical_term', canonicalTerm)
+    .eq('location', normalizedLoc)
+    .maybeSingle();
+
+  if (existing) {
+    // Increment search count
+    await supabase
+      .from('search_terms')
+      .update({ 
+        search_count: supabase.raw('search_count + 1'),
+        last_searched_at: new Date().toISOString()
+      })
+      .eq('id', existing.id);
+    return existing.id;
+  }
+
+  // Create new term
+  const { data: inserted, error } = await supabase
+    .from('search_terms')
+    .insert({
+      raw_term: rawTerm,
+      canonical_term: canonicalTerm,
+      location: normalizedLoc,
+      search_count: 1,
+      last_searched_at: new Date().toISOString()
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[SearchTerm] Error creating:', error.message);
+    return null;
+  }
+
+  return inserted?.id || null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -379,10 +313,8 @@ serve(async (req) => {
         const page = params.page || 1;
         const pageSize = params.pageSize || 20;
         const forceRefresh = !!params.forceRefresh;
-        const cacheOnly = !!params.cacheOnly;
         const keywords = (params.keywords || '').trim();
         const location = (params.location || '').trim();
-        const clientFilters = params.clientFilters || {};
 
         const nowIso = new Date().toISOString();
         const startIndex = (page - 1) * pageSize;
@@ -390,313 +322,88 @@ serve(async (req) => {
 
         const hasKeywords = keywords.length > 0;
         const hasLocation = location.length > 0;
-        const isBroadSearch = !hasKeywords || !hasLocation;
 
-        const selectedWorkTypes: string[] = Array.isArray(clientFilters.workTypes)
-          ? clientFilters.workTypes
-          : (params.remote ? [params.remote] : []);
+        const normalizedKeywords = normalizeText(keywords);
+        const canonicalKeywords = canonicalizeKeywords(normalizedKeywords);
+        const normalizedLocation = normalizeText(location);
 
-        const selectedExperiences: string[] = Array.isArray(clientFilters.experiences)
-          ? clientFilters.experiences
-          : (params.experienceLevel ? [params.experienceLevel] : []);
-
-        const selectedDatePosted: string = (clientFilters.datePosted || params.date_posted || '').toString();
-        const selectedEasyApply: boolean = !!clientFilters.easyApply || params.easy_apply === 'true';
-
-        function applyWorkTypeFilter(query: any, columnPrefix: string) {
-          if (!selectedWorkTypes || selectedWorkTypes.length === 0) return query;
-
-          const clauses: string[] = [];
-          for (const wt of selectedWorkTypes) {
-            if (wt === 'remote') clauses.push(`${columnPrefix}work_type.ilike.%remote%`);
-            if (wt === 'hybrid') clauses.push(`${columnPrefix}work_type.ilike.%hybrid%`);
-            if (wt === 'onsite') {
-              clauses.push(`${columnPrefix}work_type.ilike.%on-site%`);
-              clauses.push(`${columnPrefix}work_type.ilike.%onsite%`);
-            }
-          }
-
-          if (clauses.length === 0) return query;
-          return query.or(clauses.join(','));
-        }
-
-        function applyExperienceFilter(query: any, columnPrefix: string) {
-          if (!selectedExperiences || selectedExperiences.length === 0) return query;
-
-          const clauses: string[] = [];
-          for (const exp of selectedExperiences) {
-            if (exp === 'internship') clauses.push(`${columnPrefix}job_title.ilike.%intern%`);
-            if (exp === 'entry') {
-              clauses.push(`${columnPrefix}job_title.ilike.%entry%`);
-              clauses.push(`${columnPrefix}job_title.ilike.%junior%`);
-            }
-            if (exp === 'associate') clauses.push(`${columnPrefix}job_title.ilike.%associate%`);
-            if (exp === 'mid_senior') {
-              clauses.push(`${columnPrefix}job_title.ilike.%senior%`);
-              clauses.push(`${columnPrefix}job_title.ilike.%lead%`);
-            }
-            if (exp === 'director') {
-              clauses.push(`${columnPrefix}job_title.ilike.%director%`);
-              clauses.push(`${columnPrefix}job_title.ilike.%head%`);
-            }
-            if (exp === 'executive') {
-              clauses.push(`${columnPrefix}job_title.ilike.%executive%`);
-              clauses.push(`${columnPrefix}job_title.ilike.%vp%`);
-              clauses.push(`${columnPrefix}job_title.ilike.%chief%`);
-            }
-          }
-
-          if (clauses.length === 0) return query;
-          return query.or(clauses.join(','));
-        }
-
-        function applyDatePostedFilter(query: any, columnPrefix: string) {
-          if (!selectedDatePosted) return query;
-          const now = Date.now();
-          let cutoffMs: number | null = null;
-          if (selectedDatePosted === 'hour') cutoffMs = now - 60 * 60 * 1000;
-          if (selectedDatePosted === 'day') cutoffMs = now - 24 * 60 * 60 * 1000;
-          if (selectedDatePosted === 'week') cutoffMs = now - 7 * 24 * 60 * 60 * 1000;
-          if (!cutoffMs) return query;
-          return query.gte(`${columnPrefix}posted_at`, new Date(cutoffMs).toISOString());
-        }
-
-        function applyEasyApplyFilter(query: any, columnPrefix: string) {
-          if (!selectedEasyApply) return query;
-          return query.eq(`${columnPrefix}is_easy_apply`, true);
-        }
-
-        function applyAllClientFilters(query: any, columnPrefix: string) {
-          let q = query;
-          q = applyWorkTypeFilter(q, columnPrefix);
-          q = applyExperienceFilter(q, columnPrefix);
-          q = applyDatePostedFilter(q, columnPrefix);
-          q = applyEasyApplyFilter(q, columnPrefix);
-          return q;
-        }
-
-        async function computeStatsForJobs(jobIds: string[]) {
-          if (jobIds.length === 0) {
-            return { total: 0, remote: 0, easyApply: 0, recent: 0 };
-          }
-
-          const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-          const [totalRes, remoteRes, easyRes, recentRes] = await Promise.all([
-            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds),
-            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).ilike('work_type', '%remote%'),
-            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).eq('is_easy_apply', true),
-            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).gte('posted_at', recentCutoff),
-          ]);
-
-          return {
-            total: totalRes.count || 0,
-            remote: remoteRes.count || 0,
-            easyApply: easyRes.count || 0,
-            recent: recentRes.count || 0,
-          };
-        }
-
-        console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, cacheOnly: ${cacheOnly}, forceRefresh: ${forceRefresh}`);
+        console.log(`[Search] Query: "${keywords}" (canonical: "${canonicalKeywords}") in "${location}", page ${page}`);
 
         let fromCache = true;
-        let stats: any = { total: 0, remote: 0, easyApply: 0, recent: 0 };
-        let totalCount = 0;
         let jobsPage: any[] = [];
+        let totalCount = 0;
 
-        if (isBroadSearch) {
-          // Broad search - check cache first, then fetch from API if empty and keyword-only
-          const normalizedLoc = normalizeText(location);
-          const normalizedKw = normalizeText(keywords);
-          const canonicalKw = canonicalizeKeywords(normalizedKw);
+        // ===== PATH 1: WITH KEYWORD =====
+        if (hasKeywords) {
+          // Step 1: Check exact raw term match in search_terms
+          let searchTermId: string | null = null;
 
-          let keywordSearchTermId: string | null = null;
+          const { data: exactTerm } = await supabase
+            .from('search_terms')
+            .select('id')
+            .eq('raw_term', normalizedKeywords)
+            .eq('location', hasLocation ? normalizedLocation : '')
+            .maybeSingle();
 
-          // For keyword-only searches, check if we have a search term and linked jobs
-          if (hasKeywords && !hasLocation) {
-            // Check for existing search term
-            const { data: existingTerm } = await supabase
+          if (exactTerm) {
+            searchTermId = exactTerm.id;
+            console.log(`[Search] Found exact term match: ${searchTermId}`);
+          }
+
+          // Step 2: If no exact match, check canonical term
+          if (!searchTermId) {
+            const { data: canonicalTermData } = await supabase
               .from('search_terms')
-              .select('id, last_fetched_at')
-              .eq('canonical_term', canonicalKw)
-              .eq('location', 'Worldwide')
+              .select('id')
+              .eq('canonical_term', canonicalKeywords)
+              .eq('location', hasLocation ? normalizedLocation : '')
               .maybeSingle();
 
-            if (existingTerm) {
-              keywordSearchTermId = existingTerm.id;
-              
-              // Check if data is stale
-              const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
-              const isStale = !existingTerm.last_fetched_at || existingTerm.last_fetched_at < staleThreshold;
-              
-              if (isStale && page === 1 && !cacheOnly && !forceRefresh) {
-                console.log(`[Search] Keyword-only search - data is stale, refreshing`);
-                fromCache = false;
-
-                const inputPayload = {
-                  keywords: canonicalKw || normalizedKw,
-                  location: '',
-                  page_number: 1,
-                  remote: "",
-                  date_posted: "",
-                  experienceLevel: "",
-                  easy_apply: "",
-                  limit: JOBS_PER_API_CALL,
-                };
-
-                try {
-                  const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
-                  const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-                  console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for keyword-only search`);
-
-                  const storedCount = await storeJobs(supabase, newJobsArray, keywordSearchTermId);
-                  console.log(`[Search] Stored ${storedCount} jobs`);
-
-                  await supabase
-                    .from('search_terms')
-                    .update({ last_fetched_at: new Date().toISOString() })
-                    .eq('id', keywordSearchTermId);
-                } catch (apiError: any) {
-                  console.error('[Search] API fetch failed:', apiError.message);
-                  fromCache = true;
-                }
-              }
-            } else if (page === 1 && !cacheOnly) {
-              // No existing term - create one and fetch
-              console.log(`[Search] Keyword-only search - no existing term, creating and fetching`);
-              fromCache = false;
-
-              const termGroup = await getSearchTermGroup(supabase, keywords, 'Worldwide');
-              keywordSearchTermId = termGroup.canonicalSearchTermId;
-
-              const inputPayload = {
-                keywords: canonicalKw || normalizedKw,
-                location: '',
-                page_number: 1,
-                remote: "",
-                date_posted: "",
-                experienceLevel: "",
-                easy_apply: "",
-                limit: JOBS_PER_API_CALL,
-              };
-
-              try {
-                const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
-                const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
-                console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for keyword-only search`);
-
-                const storedCount = await storeJobs(supabase, newJobsArray, keywordSearchTermId);
-                console.log(`[Search] Stored ${storedCount} jobs`);
-
-                await supabase
-                  .from('search_terms')
-                  .update({ last_fetched_at: new Date().toISOString() })
-                  .eq('id', keywordSearchTermId);
-              } catch (apiError: any) {
-                console.error('[Search] API fetch failed:', apiError.message);
-                fromCache = true;
-              }
+            if (canonicalTermData) {
+              searchTermId = canonicalTermData.id;
+              console.log(`[Search] Found canonical term match: ${searchTermId}`);
             }
           }
 
-          // Query jobs - use links table if we have a search term, otherwise fall back to title search
-          if (keywordSearchTermId) {
-            // Query via job_search_links for keyword-only searches
+          // Query jobs if we have a search term
+          if (searchTermId) {
             let jobQuery = supabase
               .from('jobs')
               .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
-              .eq('job_search_links.search_term_id', keywordSearchTermId)
+              .eq('job_search_links.search_term_id', searchTermId)
               .gt('expires_at', nowIso);
 
-            jobQuery = applyAllClientFilters(jobQuery, '');
+            // Apply location filter if provided
+            if (hasLocation) {
+              jobQuery = jobQuery.ilike('location', `%${normalizedLocation}%`);
+            }
 
-            const pageQuery = jobQuery
+            const { data: jobRows, count } = await jobQuery
               .order('posted_at', { ascending: false })
               .range(startIndex, endIndex);
-
-            const { data: jobRows, error: qErr, count } = await pageQuery;
-            if (qErr) {
-              console.error('[Search] Keyword-only query error:', qErr);
-            }
 
             jobsPage = jobRows || [];
             totalCount = count || 0;
-
-            // Get all job IDs for stats
-            const allIdsQuery = supabase
-              .from('jobs')
-              .select('id, job_search_links!inner(search_term_id)')
-              .eq('job_search_links.search_term_id', keywordSearchTermId)
-              .gt('expires_at', nowIso)
-              .limit(1000);
-
-            const allIdsFiltered = applyAllClientFilters(allIdsQuery, '');
-            const { data: allIdsData } = await allIdsFiltered;
-            const allIds = (allIdsData || []).map((r: any) => r.id);
-            stats = await computeStatsForJobs(allIds);
-          } else {
-            // Location-only or fallback title search
-            const baseBuilder = () => {
-              let q = supabase
-                .from('jobs')
-                .select('*', { count: 'exact' })
-                .gt('expires_at', nowIso);
-
-              if (hasLocation && !hasKeywords) {
-                q = q.ilike('location', `%${normalizedLoc}%`);
-              }
-
-              if (hasKeywords && !hasLocation) {
-                const terms = Array.from(new Set([normalizedKw, canonicalKw].filter(Boolean)));
-                if (terms.length === 1) {
-                  q = q.ilike('job_title', `%${terms[0]}%`);
-                } else {
-                  q = q.or(terms.map(t => `job_title.ilike.%${t}%`).join(','));
-                }
-              }
-
-              q = applyAllClientFilters(q, '');
-              return q;
-            };
-
-            const pageQuery = baseBuilder()
-              .order('posted_at', { ascending: false })
-              .range(startIndex, endIndex);
-
-            const { data: rows, error: qErr, count } = await pageQuery;
-            if (qErr) {
-              console.error('[Search] Broad query error:', qErr);
-            }
-
-            jobsPage = rows || [];
-            totalCount = count || 0;
-
-            const allIdsQuery = baseBuilder().select('id').limit(1000);
-            const { data: allIdsData } = await allIdsQuery;
-            const allIds = (allIdsData || []).map((r: any) => r.id);
-            stats = await computeStatsForJobs(allIds);
+            console.log(`[Search] Found ${totalCount} jobs from cache via search term`);
           }
-        } else {
-          // Specific search (keywords + location)
-          const termGroup = await getSearchTermGroup(supabase, keywords, location);
-          const canonicalTerm = termGroup.canonicalTerm;
-          const canonicalSearchTermId = termGroup.canonicalSearchTermId;
-          const normalizedLocation = termGroup.normalizedLocation;
 
-          const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
-          const isStale = !termGroup.canonicalLastFetchedAt || termGroup.canonicalLastFetchedAt < staleThreshold;
-
-          const shouldFetch = !cacheOnly && page === 1 && (forceRefresh || isStale);
-
-          if (shouldFetch && canonicalSearchTermId) {
+          // Step 3: If no results OR less than a page, go to API
+          if (totalCount < MIN_PAGE_SIZE && page === 1 && !forceRefresh) {
+            console.log(`[Search] Not enough results (${totalCount}), fetching from API`);
             fromCache = false;
-            console.log(`[Search] Fetching from API (stale: ${isStale}, force: ${forceRefresh})`);
+
+            // Create or get search term for storing results
+            const newTermId = await getOrCreateSearchTerm(
+              supabase, 
+              normalizedKeywords, 
+              canonicalKeywords, 
+              hasLocation ? normalizedLocation : ''
+            );
 
             const inputPayload = {
-              keywords: canonicalTerm,
-              location: normalizedLocation,
+              keywords: keywords, // Use ORIGINAL keywords for API
+              location: location,
               page_number: 1,
-              // Always fetch broadly; filters are applied in DB
               remote: "",
               date_posted: "",
               experienceLevel: "",
@@ -709,53 +416,112 @@ serve(async (req) => {
               const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
               console.log(`[Search] Fetched ${newJobsArray.length} jobs from API`);
 
-              const storedCount = await storeJobs(supabase, newJobsArray, canonicalSearchTermId);
-              console.log(`[Search] Stored ${storedCount} jobs`);
+              if (newTermId) {
+                const storedCount = await storeJobs(supabase, newJobsArray, newTermId);
+                console.log(`[Search] Stored ${storedCount} jobs`);
 
-              await supabase
-                .from('search_terms')
-                .update({ last_fetched_at: new Date().toISOString() })
-                .eq('id', canonicalSearchTermId);
+                // Update last_fetched_at
+                await supabase
+                  .from('search_terms')
+                  .update({ last_fetched_at: new Date().toISOString() })
+                  .eq('id', newTermId);
+              }
+
+              // Re-query after storing
+              let refetchQuery = supabase
+                .from('jobs')
+                .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+                .eq('job_search_links.search_term_id', newTermId)
+                .gt('expires_at', nowIso);
+
+              if (hasLocation) {
+                refetchQuery = refetchQuery.ilike('location', `%${normalizedLocation}%`);
+              }
+
+              const { data: refetchRows, count: refetchCount } = await refetchQuery
+                .order('posted_at', { ascending: false })
+                .range(startIndex, endIndex);
+
+              jobsPage = refetchRows || [];
+              totalCount = refetchCount || 0;
             } catch (apiError: any) {
               console.error('[Search] API fetch failed:', apiError.message);
-              // Continue with DB results
               fromCache = true;
             }
           }
-
-          // Query jobs via the links table with proper join
+        }
+        // ===== PATH 2: WITHOUT KEYWORD (location only) =====
+        else if (hasLocation) {
+          // Query jobs by location directly
           let jobQuery = supabase
             .from('jobs')
-            .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
-            .eq('job_search_links.search_term_id', canonicalSearchTermId)
+            .select('*', { count: 'exact' })
+            .ilike('location', `%${normalizedLocation}%`)
             .gt('expires_at', nowIso);
 
-          jobQuery = applyAllClientFilters(jobQuery, '');
-
-          const pageQuery = jobQuery
+          const { data: jobRows, count } = await jobQuery
             .order('posted_at', { ascending: false })
             .range(startIndex, endIndex);
 
-          const { data: jobRows, error: qErr, count } = await pageQuery;
-          if (qErr) {
-            console.error('[Search] Specific query error:', qErr);
-          }
-
           jobsPage = jobRows || [];
           totalCount = count || 0;
+          console.log(`[Search] Found ${totalCount} jobs for location: ${location}`);
 
-          // Get all job IDs for stats (up to 1000)
-          const allIdsQuery = supabase
-            .from('jobs')
-            .select('id, job_search_links!inner(search_term_id)')
-            .eq('job_search_links.search_term_id', canonicalSearchTermId)
-            .gt('expires_at', nowIso)
-            .limit(1000);
+          // If not enough results, go to API
+          if (totalCount < MIN_PAGE_SIZE && page === 1 && !forceRefresh) {
+            console.log(`[Search] Not enough location results (${totalCount}), fetching from API`);
+            fromCache = false;
 
-          const allIdsFiltered = applyAllClientFilters(allIdsQuery, '');
-          const { data: allIdsData } = await allIdsFiltered;
-          const allIds = (allIdsData || []).map((r: any) => r.id);
-          stats = await computeStatsForJobs(allIds);
+            // Create search term for location-only search
+            const newTermId = await getOrCreateSearchTerm(
+              supabase,
+              '',
+              '',
+              normalizedLocation
+            );
+
+            const inputPayload = {
+              keywords: '',
+              location: location, // Use ORIGINAL location for API
+              page_number: 1,
+              remote: "",
+              date_posted: "",
+              experienceLevel: "",
+              easy_apply: "",
+              limit: JOBS_PER_API_CALL,
+            };
+
+            try {
+              const newJobs = await runActor(ACTOR_JOB_SEARCH, inputPayload, apiToken, true);
+              const newJobsArray = Array.isArray(newJobs) ? newJobs : [];
+              console.log(`[Search] Fetched ${newJobsArray.length} jobs from API for location`);
+
+              if (newTermId) {
+                const storedCount = await storeJobs(supabase, newJobsArray, newTermId);
+                console.log(`[Search] Stored ${storedCount} jobs`);
+
+                await supabase
+                  .from('search_terms')
+                  .update({ last_fetched_at: new Date().toISOString() })
+                  .eq('id', newTermId);
+              }
+
+              // Re-query after storing
+              const { data: refetchRows, count: refetchCount } = await supabase
+                .from('jobs')
+                .select('*', { count: 'exact' })
+                .ilike('location', `%${normalizedLocation}%`)
+                .gt('expires_at', nowIso)
+                .order('posted_at', { ascending: false })
+                .range(startIndex, endIndex);
+
+              jobsPage = refetchRows || [];
+              totalCount = refetchCount || 0;
+            } catch (apiError: any) {
+              console.error('[Search] API fetch failed:', apiError.message);
+              fromCache = true;
+            }
+          }
         }
 
         // Transform jobs to match expected front-end format
@@ -775,6 +541,17 @@ serve(async (req) => {
           is_easy_apply: job.is_easy_apply,
           applicant_count: job.applicant_count,
         }));
+
+        // Compute basic stats from results
+        const stats = {
+          total: totalCount,
+          remote: transformedJobs.filter((j: any) => (j.work_type || '').toLowerCase().includes('remote')).length,
+          easyApply: transformedJobs.filter((j: any) => j.is_easy_apply).length,
+          recent: transformedJobs.filter((j: any) => {
+            const postedAt = j.posted_at ? new Date(j.posted_at).getTime() : 0;
+            return postedAt >= Date.now() - 24 * 60 * 60 * 1000;
+          }).length,
+        };
 
         result = {
           jobs: transformedJobs,
@@ -800,7 +577,6 @@ serve(async (req) => {
       }
 
       case 'cleanupExpiredCache': {
-        // Clean up old cache table
         const { error: deleteError, count } = await supabase
           .from('job_search_cache')
           .delete()
@@ -810,7 +586,6 @@ serve(async (req) => {
           throw deleteError;
         }
 
-        // Also clean up expired jobs
         const { count: jobsDeleted } = await supabase
           .from('jobs')
           .delete()

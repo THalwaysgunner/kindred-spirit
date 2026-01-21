@@ -37,7 +37,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [results, setResults] = useState<JobSearchResult[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobSearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [easyApplyFilter, setEasyApplyFilter] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Autocomplete state
@@ -48,21 +47,17 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const keywordsInputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Filter bar dropdowns (for filtering loaded results - multi-select)
+  // Filter bar dropdowns (Row 1 - CLIENT-SIDE ONLY for filtering displayed results)
   const [openFilterDropdown, setOpenFilterDropdown] = useState<'remote' | 'experience' | 'date' | null>(null);
   const filterRemoteRef = useRef<HTMLDivElement>(null);
   const filterExperienceRef = useRef<HTMLDivElement>(null);
   const filterDateRef = useRef<HTMLDivElement>(null);
 
-  // Search toolbar dropdowns (for API params - single select)
-  const [openSearchDropdown, setOpenSearchDropdown] = useState<'remote' | 'experience' | null>(null);
-  const searchRemoteRef = useRef<HTMLDivElement>(null);
-  const searchExperienceRef = useRef<HTMLDivElement>(null);
-
-  // Multi-select filter state (client-side filters)
-  const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>([]);
-  const [selectedExperiences, setSelectedExperiences] = useState<string[]>([]);
-  const [selectedDatePosted, setSelectedDatePosted] = useState<string>('');
+  // Row 1 client-side filter state (ONLY for filtering displayed results - NOT sent to API)
+  const [clientWorkTypes, setClientWorkTypes] = useState<string[]>([]);
+  const [clientExperiences, setClientExperiences] = useState<string[]>([]);
+  const [clientDatePosted, setClientDatePosted] = useState<string>('');
+  const [clientEasyApply, setClientEasyApply] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -72,14 +67,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [serverStats, setServerStats] = useState<{ total: number; remote: number; easyApply: number; recent: number } | null>(null);
   const pageSize = 20;
 
-  const [filters, setFilters] = useState<SearchFilters>({
-    keywords: '',
-    location: '',
-    date_posted: '',
-    experienceLevel: '',
-    remote: '',
-    easy_apply: ''
-  });
+  // Row 2 - Fetch variables (ONLY keywords and location - sent to API)
+  const [searchKeywords, setSearchKeywords] = useState('');
+  const [searchLocation, setSearchLocation] = useState('');
+
+  // Raw results from API (before client-side filtering)
+  const [rawResults, setRawResults] = useState<JobSearchResult[]>([]);
 
   // Debounced autocomplete fetch
   const fetchSuggestions = useCallback(async (query: string) => {
@@ -111,22 +104,21 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   // Debounce autocomplete requests
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchSuggestions(filters.keywords);
+      fetchSuggestions(searchKeywords);
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [filters.keywords, fetchSuggestions]);
+  }, [searchKeywords, fetchSuggestions]);
 
   // Handle selecting a suggestion
   const handleSelectSuggestion = (suggestion: AutocompleteSuggestion) => {
-    setFilters({ ...filters, keywords: suggestion.title });
+    setSearchKeywords(suggestion.title);
     setShowSuggestions(false);
     setSuggestions([]);
     keywordsInputRef.current?.focus();
   };
 
-  // Client-side filter options (all applied after fetching)
-
+  // Filter options for display
   const remoteOptions = [
     { value: '', label: 'Work Type' },
     { value: 'remote', label: 'Remote' },
@@ -144,7 +136,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     { value: 'executive', label: 'Executive' },
   ];
 
-  // Client-side filter options (applied after fetching)
   const datePostedOptions = [
     { value: '', label: 'Any time' },
     { value: 'hour', label: 'Past hour' },
@@ -157,48 +148,38 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return found?.label ?? options[0]?.label ?? '';
   };
 
-  const handleSearch = async (page: number = 1, forceRefresh: boolean = false, cacheOnly: boolean = false) => {
-    if (!filters.keywords && !filters.location) return;
+  // Fetch jobs from API - ONLY uses keywords + location (Row 2)
+  const handleSearch = async (page: number = 1, forceRefresh: boolean = false) => {
+    if (!searchKeywords && !searchLocation) return;
 
     setLoading(true);
     setError(null);
     if (page === 1) {
+      setRawResults([]);
       setResults([]);
       setSelectedJob(null);
     }
 
     try {
-      // The upstream search API only supports single values for these params.
-      // If multiple are selected, we fetch broader results and rely on client-side filtering.
-      const apiRemote = selectedWorkTypes.length === 1 ? selectedWorkTypes[0] : '';
-      const apiExperienceLevel = selectedExperiences.length === 1 ? selectedExperiences[0] : '';
-
-      // Always send empty easy_apply to API - we filter client-side only
-      // This ensures we get ALL jobs from the API, not just easy apply ones
+      // ONLY send keywords and location - NO filters
       const searchParams = {
-        keywords: filters.keywords,
-        location: filters.location,
-        remote: apiRemote,
-        experienceLevel: apiExperienceLevel,
+        keywords: searchKeywords,
+        location: searchLocation,
+        remote: '',
+        experienceLevel: '',
         date_posted: '',
-        easy_apply: '', // Never filter by easy_apply at API level - client-side only
+        easy_apply: '',
         page,
         pageSize,
         forceRefresh,
-        cacheOnly,
-        clientFilters: {
-          workTypes: selectedWorkTypes,
-          experiences: selectedExperiences,
-          datePosted: selectedDatePosted,
-          easyApply: easyApplyFilter,
-        }
+        cacheOnly: false
       };
 
-      console.log('[JobSearch] Sending to API:', searchParams);
+      console.log('[JobSearch] Fetching with params:', { keywords: searchKeywords, location: searchLocation, page });
 
       const response = await ApifyService.searchJobs(searchParams);
       
-      setResults(response.jobs);
+      setRawResults(response.jobs);
       setTotalCount(response.totalCount);
       setTotalPages(response.totalPages);
       setCurrentPage(response.page);
@@ -212,15 +193,67 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     }
   };
 
-  // When filters change, refresh from DB cache (no external fetch)
+  // Apply client-side filters to raw results (Row 1 filters)
+  const filteredResults = useMemo(() => {
+    let filtered = [...rawResults];
+
+    // Work Type filter
+    if (clientWorkTypes.length > 0) {
+      filtered = filtered.filter(job => {
+        const workType = (job.work_type || '').toLowerCase();
+        return clientWorkTypes.some(wt => {
+          if (wt === 'remote') return workType.includes('remote');
+          if (wt === 'hybrid') return workType.includes('hybrid');
+          if (wt === 'onsite') return workType.includes('on-site') || workType.includes('onsite');
+          return false;
+        });
+      });
+    }
+
+    // Experience filter (check job title)
+    if (clientExperiences.length > 0) {
+      filtered = filtered.filter(job => {
+        const title = (job.job_title || '').toLowerCase();
+        return clientExperiences.some(exp => {
+          if (exp === 'internship') return title.includes('intern');
+          if (exp === 'entry') return title.includes('entry') || title.includes('junior');
+          if (exp === 'associate') return title.includes('associate');
+          if (exp === 'mid_senior') return title.includes('senior') || title.includes('lead');
+          if (exp === 'director') return title.includes('director') || title.includes('head');
+          if (exp === 'executive') return title.includes('executive') || title.includes('vp') || title.includes('chief');
+          return false;
+        });
+      });
+    }
+
+    // Date Posted filter
+    if (clientDatePosted) {
+      const now = Date.now();
+      let cutoffMs: number | null = null;
+      if (clientDatePosted === 'hour') cutoffMs = now - 60 * 60 * 1000;
+      if (clientDatePosted === 'day') cutoffMs = now - 24 * 60 * 60 * 1000;
+      if (clientDatePosted === 'week') cutoffMs = now - 7 * 24 * 60 * 60 * 1000;
+      
+      if (cutoffMs) {
+        filtered = filtered.filter(job => {
+          const postedAt = job.posted_at ? new Date(job.posted_at).getTime() : 0;
+          return postedAt >= cutoffMs!;
+        });
+      }
+    }
+
+    // Easy Apply filter
+    if (clientEasyApply) {
+      filtered = filtered.filter(job => job.is_easy_apply === true);
+    }
+
+    return filtered;
+  }, [rawResults, clientWorkTypes, clientExperiences, clientDatePosted, clientEasyApply]);
+
+  // Update displayed results when filters change
   useEffect(() => {
-    if (!filters.keywords && !filters.location) return;
-    const t = setTimeout(() => {
-      handleSearch(1, false, true);
-    }, 250);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
+    setResults(filteredResults);
+  }, [filteredResults]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
@@ -278,23 +311,24 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Results are filtered + ordered server-side so counts/cards/pagination match the full dataset.
-  const filteredResults = useMemo(() => results, [results]);
-
-  // Stats calculations - reflect FULL filtered dataset (provided by backend)
+  // Stats based on filtered results (client-side)
   const stats = useMemo(() => {
-    const total = serverStats?.total ?? totalCount;
-    const remote = serverStats?.remote ?? 0;
-    const easyApply = serverStats?.easyApply ?? 0;
-    const recent = serverStats?.recent ?? 0;
+    const total = filteredResults.length;
+    const remote = filteredResults.filter(j => (j.work_type || '').toLowerCase().includes('remote')).length;
+    const easyApply = filteredResults.filter(j => j.is_easy_apply).length;
+    const recentCutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const recent = filteredResults.filter(j => {
+      const postedAt = j.posted_at ? new Date(j.posted_at).getTime() : 0;
+      return postedAt >= recentCutoff;
+    }).length;
 
     return [
-      { label: 'Total Results', value: total, growth: '', trend: 'up' },
+      { label: 'Showing', value: total, growth: '', trend: 'up' },
       { label: 'Remote Jobs', value: remote, growth: '', trend: 'up' },
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [serverStats, totalCount]);
+  }, [filteredResults]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -311,17 +345,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         }
       }
 
-      // Close search toolbar dropdowns
-      if (openSearchDropdown) {
-        const searchRemoteContains = !!searchRemoteRef.current?.contains(targetNode);
-        const searchExpContains = !!searchExperienceRef.current?.contains(targetNode);
-        if (!searchRemoteContains && !searchExpContains) {
-          setOpenSearchDropdown(null);
-        }
-      }
-
       if (selectedJob && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
-        // Don't close if clicking on a table row
         const target = event.target as HTMLElement;
         if (!target.closest('tr[data-job-row]')) {
           setSelectedJob(null);
@@ -330,14 +354,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedJob, openFilterDropdown, openSearchDropdown]);
+  }, [selectedJob, openFilterDropdown]);
 
   return (
     <div className="flex relative min-h-screen bg-white dark:bg-[#0D0F16] font-sans transition-colors w-full overflow-x-hidden min-w-[1200px]">
       {/* Main Content */}
       <div className={`flex flex-col w-full transition-all duration-300 ${selectedJob ? 'mr-[600px]' : ''}`}>
 
-        {/* 1. Stat Cards - Same as ApplicationsList */}
+        {/* 1. Stat Cards */}
         <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-800/50 gap-px border-b border-slate-200 dark:border-slate-800 w-full min-w-[1200px]">
           {stats.map((stat, i) => (
             <div key={i} className="bg-white dark:bg-[#0D0F16] p-6 flex flex-col h-28 min-h-28 font-sans group">
@@ -358,7 +382,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           ))}
         </div>
 
-        {/* 2. Filter Bar - Dropdowns for filtering results (MULTI-SELECT) */}
+        {/* Row 1: Filter Bar - CLIENT-SIDE ONLY (filters displayed results) */}
         <div className="flex items-center gap-4 px-8 py-3 border-b border-slate-200 dark:border-slate-800 w-full">
           {/* Work Type Dropdown (multi-select) */}
           <div ref={filterRemoteRef} className="relative">
@@ -366,17 +390,17 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               type="button"
               onClick={() => setOpenFilterDropdown(openFilterDropdown === 'remote' ? null : 'remote')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                selectedWorkTypes.length > 0 
+                clientWorkTypes.length > 0 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               <span className="whitespace-nowrap">
-                {selectedWorkTypes.length === 0 
+                {clientWorkTypes.length === 0 
                   ? 'Work Type' 
-                  : selectedWorkTypes.length === 1 
-                    ? remoteOptions.find(o => o.value === selectedWorkTypes[0])?.label 
-                    : `${selectedWorkTypes.length} selected`}
+                  : clientWorkTypes.length === 1 
+                    ? remoteOptions.find(o => o.value === clientWorkTypes[0])?.label 
+                    : `${clientWorkTypes.length} selected`}
               </span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
@@ -384,16 +408,16 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             {openFilterDropdown === 'remote' && (
               <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                 {remoteOptions.filter(opt => opt.value !== '').map((opt) => {
-                  const isSelected = selectedWorkTypes.includes(opt.value);
+                  const isSelected = clientWorkTypes.includes(opt.value);
                   return (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => {
                         if (isSelected) {
-                          setSelectedWorkTypes(selectedWorkTypes.filter(v => v !== opt.value));
+                          setClientWorkTypes(clientWorkTypes.filter(v => v !== opt.value));
                         } else {
-                          setSelectedWorkTypes([...selectedWorkTypes, opt.value]);
+                          setClientWorkTypes([...clientWorkTypes, opt.value]);
                         }
                       }}
                       className={
@@ -420,17 +444,17 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               type="button"
               onClick={() => setOpenFilterDropdown(openFilterDropdown === 'experience' ? null : 'experience')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                selectedExperiences.length > 0 
+                clientExperiences.length > 0 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               <span className="whitespace-nowrap">
-                {selectedExperiences.length === 0 
+                {clientExperiences.length === 0 
                   ? 'Experience' 
-                  : selectedExperiences.length === 1 
-                    ? experienceOptions.find(o => o.value === selectedExperiences[0])?.label 
-                    : `${selectedExperiences.length} selected`}
+                  : clientExperiences.length === 1 
+                    ? experienceOptions.find(o => o.value === clientExperiences[0])?.label 
+                    : `${clientExperiences.length} selected`}
               </span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
@@ -438,16 +462,16 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             {openFilterDropdown === 'experience' && (
               <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                 {experienceOptions.filter(opt => opt.value !== '').map((opt) => {
-                  const isSelected = selectedExperiences.includes(opt.value);
+                  const isSelected = clientExperiences.includes(opt.value);
                   return (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => {
                         if (isSelected) {
-                          setSelectedExperiences(selectedExperiences.filter(v => v !== opt.value));
+                          setClientExperiences(clientExperiences.filter(v => v !== opt.value));
                         } else {
-                          setSelectedExperiences([...selectedExperiences, opt.value]);
+                          setClientExperiences([...clientExperiences, opt.value]);
                         }
                       }}
                       className={
@@ -474,26 +498,26 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               type="button"
               onClick={() => setOpenFilterDropdown(openFilterDropdown === 'date' ? null : 'date')}
               className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-                selectedDatePosted 
+                clientDatePosted 
                   ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, selectedDatePosted)}</span>
+              <span className="whitespace-nowrap">{getOptionLabel(datePostedOptions, clientDatePosted)}</span>
               <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
             {openFilterDropdown === 'date' && (
               <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                 {datePostedOptions.map((opt) => {
-                  const selected = opt.value === selectedDatePosted;
+                  const selected = opt.value === clientDatePosted;
                   return (
                     <button
                       key={opt.value || 'empty'}
                       type="button"
                       onClick={() => {
-                        setSelectedDatePosted(opt.value);
+                        setClientDatePosted(opt.value);
                         setOpenFilterDropdown(null);
                       }}
                       className={
@@ -514,9 +538,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           {/* Easy Apply Toggle */}
           <button
             type="button"
-            onClick={() => setEasyApplyFilter(!easyApplyFilter)}
+            onClick={() => setClientEasyApply(!clientEasyApply)}
             className={`px-3 py-1.5 text-xs tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 rounded-md ${
-              easyApplyFilter 
+              clientEasyApply 
                 ? 'bg-[#FF6B00] text-white' 
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
@@ -526,14 +550,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           </button>
 
           {/* Clear Filters */}
-          {(selectedWorkTypes.length > 0 || selectedExperiences.length > 0 || selectedDatePosted || easyApplyFilter) && (
+          {(clientWorkTypes.length > 0 || clientExperiences.length > 0 || clientDatePosted || clientEasyApply) && (
             <button
               type="button"
               onClick={() => {
-                setSelectedWorkTypes([]);
-                setSelectedExperiences([]);
-                setSelectedDatePosted('');
-                setEasyApplyFilter(false);
+                setClientWorkTypes([]);
+                setClientExperiences([]);
+                setClientDatePosted('');
+                setClientEasyApply(false);
               }}
               className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
@@ -542,7 +566,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           )}
         </div>
 
-        {/* 3. Search Toolbar Row - API parameters */}
+        {/* Row 2: Search Bar - FETCH VARIABLES ONLY (Keywords + Location) */}
         <div className="flex items-center justify-between px-8 py-5 w-full min-w-[1200px]">
           <div className="flex items-center gap-4 shrink-0">
             <div className="relative group w-80 min-w-80">
@@ -551,10 +575,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 ref={keywordsInputRef}
                 type="text"
                 placeholder="Search by title, skill, or company"
-                value={filters.keywords}
-                onChange={(e) => setFilters({ ...filters, keywords: e.target.value })}
+                value={searchKeywords}
+                onChange={(e) => setSearchKeywords(e.target.value)}
                 onKeyDown={handleKeyDown}
-                onFocus={() => filters.keywords.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
+                onFocus={() => searchKeywords.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
                 autoComplete="off"
               />
@@ -591,300 +615,152 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               <input
                 type="text"
                 placeholder="City, state, or zip code"
-                value={filters.location}
-                onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+                value={searchLocation}
+                onChange={(e) => setSearchLocation(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
               />
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            {/* API Search Filters - single select for search params */}
-            <div ref={searchRemoteRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setOpenSearchDropdown(openSearchDropdown === 'remote' ? null : 'remote')}
-                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
-              >
-                <span className="whitespace-nowrap">
-                  {selectedWorkTypes.length === 0
-                    ? getOptionLabel(remoteOptions, '')
-                    : selectedWorkTypes.length === 1
-                      ? remoteOptions.find(o => o.value === selectedWorkTypes[0])?.label
-                      : `${selectedWorkTypes.length} selected`}
-                </span>
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-              </button>
-
-              {openSearchDropdown === 'remote' && (
-                <div className="absolute top-full mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                  {remoteOptions.filter(opt => opt.value !== '').map((opt) => {
-                    const selected = selectedWorkTypes.includes(opt.value);
-                    return (
-                      <button
-                        key={opt.value || 'empty'}
-                        type="button"
-                        onClick={() => {
-                          if (selected) {
-                            setSelectedWorkTypes(selectedWorkTypes.filter(v => v !== opt.value));
-                          } else {
-                            setSelectedWorkTypes([...selectedWorkTypes, opt.value]);
-                          }
-                        }}
-                        className={
-                          `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
-                          (selected
-                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
-                        }
-                      >
-                        <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${selected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
-                          {selected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                        </div>
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div ref={searchExperienceRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setOpenSearchDropdown(openSearchDropdown === 'experience' ? null : 'experience')}
-                className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
-              >
-                <span className="whitespace-nowrap">
-                  {selectedExperiences.length === 0
-                    ? getOptionLabel(experienceOptions, '')
-                    : selectedExperiences.length === 1
-                      ? experienceOptions.find(o => o.value === selectedExperiences[0])?.label
-                      : `${selectedExperiences.length} selected`}
-                </span>
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-              </button>
-
-              {openSearchDropdown === 'experience' && (
-                <div className="absolute top-full mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                  {experienceOptions.filter(opt => opt.value !== '').map((opt) => {
-                    const selected = selectedExperiences.includes(opt.value);
-                    return (
-                      <button
-                        key={opt.value || 'empty'}
-                        type="button"
-                        onClick={() => {
-                          if (selected) {
-                            setSelectedExperiences(selectedExperiences.filter(v => v !== opt.value));
-                          } else {
-                            setSelectedExperiences([...selectedExperiences, opt.value]);
-                          }
-                        }}
-                        className={
-                          `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
-                          (selected
-                            ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
-                        }
-                      >
-                        <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${selected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
-                          {selected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                        </div>
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
             <button
+              type="button"
               onClick={() => handleSearch(1)}
-              disabled={loading}
-              className="px-5 py-2.5 min-w-32 bg-[#fe794e] text-white hover:bg-[#e56a42] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+              disabled={loading || (!searchKeywords && !searchLocation)}
+              className="px-6 py-2.5 bg-[#FF6B00] hover:bg-[#E55A00] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium tracking-wider transition-colors flex items-center gap-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 stroke-[3]" />}
-              Search Jobs
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              Search
             </button>
           </div>
+
+          {/* Results info */}
+          {rawResults.length > 0 && (
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              {fromCache ? 'From cache' : 'Fresh results'} • Page {currentPage} of {totalPages}
+            </div>
+          )}
         </div>
 
-        {/* 4. Jobs Table */}
-        <div className="flex-1 w-full overflow-x-auto no-scrollbar">
-          {loading && results.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="w-10 h-10 text-[#FF6B00] animate-spin mb-4" />
-              <p className="text-slate-600 dark:text-slate-300 font-medium">Scanning LinkedIn...</p>
-            </div>
-          )}
-
+        {/* Results Table */}
+        <div className="flex-1 overflow-auto px-8 pb-8">
           {error && (
-            <div className="flex flex-col items-center justify-center py-20 text-red-500">
-              <AlertCircle className="w-12 h-12 mb-2" />
-              <p>{error}</p>
+            <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 mb-4">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span className="text-sm">{error}</span>
             </div>
           )}
 
-          {results.length === 0 && !loading && !error && (
+          {loading && rawResults.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 text-[#FF6B00] animate-spin mb-4" />
+              <p className="text-sm text-slate-500">Searching for jobs...</p>
+            </div>
+          ) : results.length === 0 && rawResults.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-              <Briefcase className="w-16 h-16 mb-4 opacity-20" />
-              <p className="text-lg font-medium">No jobs found yet</p>
-              <p className="text-sm">Try searching for keywords like "Frontend" in "New York"</p>
+              <Search className="w-12 h-12 mb-4 opacity-50" />
+              <p className="text-sm">Enter keywords or location to search for jobs</p>
             </div>
-          )}
-
-          {filteredResults.length > 0 && (
-            <table className="w-full text-left text-sm border-collapse min-w-[1300px]">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-8">Company</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Role</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Location</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Type</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Posted</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4">Salary</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4 text-center">Easy Apply</th>
-                  <th className="py-4 text-xs font-normal text-slate-400 tracking-wider px-4 text-center">Link</th>
-                  <th className="py-4 w-12 pr-8"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                {filteredResults.map((job, idx) => (
-                  <tr
-                    key={idx}
-                    data-job-row
-                    onClick={() => setSelectedJob(job)}
-                    className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer ${selectedJob?.job_url === job.job_url ? 'bg-slate-50 dark:bg-slate-800/50' : ''}`}
-                  >
-                    {/* Company */}
-                    <td className="py-5 px-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
-                          {job.companyLogo ? (
-                            <img src={job.companyLogo} alt="" className="w-full h-full object-contain" />
-                          ) : (
-                            <Building2 className="w-5 h-5 text-slate-400" />
-                          )}
+          ) : results.length === 0 && rawResults.length > 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <AlertCircle className="w-12 h-12 mb-4 opacity-50" />
+              <p className="text-sm">No jobs match your filters. Try adjusting the filters above.</p>
+            </div>
+          ) : (
+            <>
+              <table className="w-full min-w-[1000px]">
+                <thead>
+                  <tr className="text-left text-xs text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                    <th className="pb-3 font-normal">Company</th>
+                    <th className="pb-3 font-normal">Role</th>
+                    <th className="pb-3 font-normal">Location</th>
+                    <th className="pb-3 font-normal">Type</th>
+                    <th className="pb-3 font-normal">Posted</th>
+                    <th className="pb-3 font-normal">Salary</th>
+                    <th className="pb-3 font-normal">Easy Apply</th>
+                    <th className="pb-3 font-normal">Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map((job, idx) => (
+                    <tr
+                      key={job.job_url || idx}
+                      data-job-row
+                      onClick={() => setSelectedJob(job)}
+                      className={`border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors ${
+                        selectedJob?.job_url === job.job_url ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''
+                      }`}
+                    >
+                      <td className="py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
+                            {job.companyLogo ? (
+                              <img src={job.companyLogo} alt={job.company} className="w-full h-full object-cover" />
+                            ) : (
+                              <Building2 className="w-5 h-5 text-slate-400" />
+                            )}
+                          </div>
+                          <span className="text-sm font-medium text-slate-900 dark:text-white">{job.company || 'Unknown'}</span>
                         </div>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-slate-900 dark:text-white group-hover:text-[#FF6B00] transition-colors flex items-center gap-1">
-                            {job.company}
-                            {job.is_verified && <CheckCircle2 className="w-3 h-3 text-blue-500" />}
+                      </td>
+                      <td className="py-4">
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{job.job_title || 'Unknown'}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{job.location || 'Not specified'}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          (job.work_type || '').toLowerCase().includes('remote')
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : (job.work_type || '').toLowerCase().includes('hybrid')
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          {job.work_type || 'On-site'}
+                        </span>
+                      </td>
+                      <td className="py-4">
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{job.posted_at || 'Unknown'}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{job.salary || '-'}</span>
+                      </td>
+                      <td className="py-4">
+                        {job.is_easy_apply ? (
+                          <span className="flex items-center gap-1 text-xs text-[#FF6B00]">
+                            <Zap className="w-3.5 h-3.5" />
+                            Yes
                           </span>
-                          {job.applicant_count > 0 && (
-                            <span className="text-xs text-slate-400">{job.applicant_count} applicants</span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Role */}
-                    <td className="py-5 px-4">
-                      <span className="text-sm font-medium text-slate-900 dark:text-white">{job.job_title}</span>
-                    </td>
-
-                    {/* Location */}
-                    <td className="py-5 px-4">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">{job.location || '-'}</span>
-                    </td>
-
-                    {/* Type */}
-                    <td className="py-5 px-4">
-                      {job.work_type ? (
-                        <span className="inline-flex items-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-md">
-                          {job.work_type}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </td>
-
-                    {/* Posted */}
-                    <td className="py-5 px-4">
-                      <span className="text-xs text-green-600 dark:text-green-400 font-medium">{job.posted_at || '-'}</span>
-                    </td>
-
-                    {/* Salary */}
-                    <td className="py-5 px-4">
-                      {job.salary ? (
-                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{job.salary}</span>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </td>
-
-                    {/* Easy Apply */}
-                    <td className="py-5 px-4 text-center">
-                      {job.is_easy_apply ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-[#FF6B00] font-bold">
-                          <Zap className="w-3 h-3" />
-                          Yes
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </td>
-
-                    {/* Link */}
-                    <td className="py-5 px-4 text-center">
-                      {job.job_url && (
+                        ) : (
+                          <span className="text-xs text-slate-400">No</span>
+                        )}
+                      </td>
+                      <td className="py-4">
                         <a
                           href={job.job_url}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-[#FF6B00] hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                          className="text-[#FF6B00] hover:text-[#E55A00] transition-colors"
                         >
                           <ExternalLink className="w-4 h-4" />
                         </a>
-                      )}
-                    </td>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-                    {/* Action */}
-                    <td className="py-5 pr-8">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAnalyzeJob(job);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 px-3 py-1.5 bg-[#FF6B00] text-white text-xs font-medium rounded-md hover:bg-[#E66000] transition-all flex items-center gap-1"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Create CV
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && totalCount > 0 && (
-            <div className="flex items-center justify-between px-8 py-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalCount)} of {totalCount} jobs
-                </span>
-                {fromCache && (
-                  <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded text-xs font-medium">
-                    Cached
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1 || loading}
-                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {/* Page numbers */}
-                <div className="flex items-center gap-1">
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage <= 1 || loading}
+                    className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     let pageNum: number;
                     if (totalPages <= 5) {
@@ -896,32 +772,33 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                     } else {
                       pageNum = currentPage - 2 + i;
                     }
+                    
                     return (
                       <button
                         key={pageNum}
                         onClick={() => handlePageChange(pageNum)}
                         disabled={loading}
-                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
+                        className={`w-10 h-10 rounded-lg text-sm font-medium transition-colors ${
                           currentPage === pageNum
                             ? 'bg-[#FF6B00] text-white'
-                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            : 'border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                         }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
+                  
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages || loading}
+                    className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages || loading}
-                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -930,136 +807,117 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       {selectedJob && (
         <div
           ref={sidebarRef}
-          className="fixed top-0 right-0 w-[600px] h-full bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col z-40 animate-in slide-in-from-right-5 duration-300"
+          className="fixed right-0 top-0 h-full w-[600px] bg-white dark:bg-[#0D0F16] border-l border-slate-200 dark:border-slate-800 shadow-2xl overflow-y-auto z-40"
         >
-          {/* Sidebar Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          {/* Header */}
+          <div className="sticky top-0 bg-white dark:bg-[#0D0F16] border-b border-slate-200 dark:border-slate-800 p-6 z-10">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
+                  {selectedJob.companyLogo ? (
+                    <img src={selectedJob.companyLogo} alt={selectedJob.company} className="w-full h-full object-cover" />
+                  ) : (
+                    <Building2 className="w-7 h-7 text-slate-400" />
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{selectedJob.job_title}</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{selectedJob.company}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedJob(null)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center overflow-hidden">
-                {selectedJob.companyLogo ? (
-                  <img src={selectedJob.companyLogo} alt="" className="w-full h-full object-contain" />
-                ) : (
-                  <Building2 className="w-6 h-6 text-slate-400" />
-                )}
+              <button
+                onClick={() => onAnalyzeJob(selectedJob)}
+                className="flex-1 px-4 py-2.5 bg-[#FF6B00] hover:bg-[#E55A00] text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                Create CV
+              </button>
+              <button className="p-2.5 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <Share2 className="w-4 h-4 text-slate-500" />
+              </button>
+              <a
+                href={selectedJob.job_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2.5 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 text-slate-500" />
+              </a>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 space-y-6">
+            {/* Meta Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <MapPin className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-600 dark:text-slate-300">{selectedJob.location || 'Not specified'}</span>
               </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Briefcase className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-600 dark:text-slate-300">{selectedJob.work_type || 'On-site'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-600 dark:text-slate-300">{selectedJob.posted_at || 'Unknown'}</span>
+              </div>
+              {selectedJob.salary && (
+                <div className="flex items-center gap-2 text-sm">
+                  <TrendingUp className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600 dark:text-slate-300">{selectedJob.salary}</span>
+                </div>
+              )}
+              {selectedJob.applicant_count && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Users className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600 dark:text-slate-300">{selectedJob.applicant_count} applicants</span>
+                </div>
+              )}
+              {selectedJob.is_easy_apply && (
+                <div className="flex items-center gap-2 text-sm text-[#FF6B00]">
+                  <Zap className="w-4 h-4" />
+                  <span>Easy Apply</span>
+                </div>
+              )}
+            </div>
+
+            {/* Description */}
+            {selectedJob.description && (
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{selectedJob.job_title}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  {selectedJob.company}
-                  {selectedJob.is_verified && <CheckCircle2 className="w-3 h-3 text-blue-500" />}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setSelectedJob(null)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-slate-400" />
-            </button>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-            <button
-              onClick={() => onAnalyzeJob(selectedJob)}
-              className="flex-1 px-4 py-2.5 bg-[#FF6B00] hover:bg-[#E66000] text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm shadow-orange-500/20"
-            >
-              <FileText className="w-4 h-4" />
-              Create CV
-            </button>
-            <button className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-              Save
-            </button>
-            <button className="p-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-              <Share2 className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Job Meta */}
-          <div className="grid grid-cols-2 gap-4 px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-slate-600 dark:text-slate-300">{selectedJob.location || 'Not specified'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-slate-600 dark:text-slate-300">{selectedJob.work_type || 'Not specified'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-green-600 dark:text-green-400">{selectedJob.posted_at || 'Recently'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-slate-600 dark:text-slate-300">
-                {selectedJob.applicant_count ? `${selectedJob.applicant_count} applicants` : 'Be first to apply'}
-              </span>
-            </div>
-            {selectedJob.salary && (
-              <div className="flex items-center gap-2 col-span-2">
-                <Zap className="w-4 h-4 text-orange-500" />
-                <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{selectedJob.salary}</span>
+                <h3 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Description</h3>
+                <div className="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap leading-relaxed">
+                  {selectedJob.description}
+                </div>
               </div>
             )}
-          </div>
-
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            {/* About the job */}
-            <div className="mb-6">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">About the job</h3>
-              <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                {selectedJob.description || 'No description available.'}
-              </div>
-            </div>
 
             {/* Job Insights */}
             {selectedJob.job_insights && selectedJob.job_insights.length > 0 && (
-              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
-                <h3 className="font-bold text-slate-900 dark:text-white mb-3 text-sm">Job Insights</h3>
-                <ul className="space-y-2">
-                  {selectedJob.job_insights.map((insight, i) => (
-                    <li key={i} className="text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2">
-                      <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00] shrink-0"></div>
+              <div>
+                <h3 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Insights</h3>
+                <div className="flex flex-wrap gap-2">
+                  {selectedJob.job_insights.map((insight: string, idx: number) => (
+                    <span
+                      key={idx}
+                      className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs"
+                    >
                       {insight}
-                    </li>
+                    </span>
                   ))}
-                </ul>
+                </div>
               </div>
             )}
-
-            {/* About Company */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
-              <h3 className="font-bold text-slate-900 dark:text-white mb-3 text-sm">About the company</h3>
-              <div className="flex items-center gap-4 mb-3">
-                <div className="w-10 h-10 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg flex items-center justify-center shrink-0">
-                  {selectedJob.companyLogo ? (
-                    <img src={selectedJob.companyLogo} alt="" className="w-8 h-8 object-contain" />
-                  ) : (
-                    <Building2 className="w-5 h-5 text-slate-400" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="font-bold text-sm text-slate-900 dark:text-white">{selectedJob.company}</div>
-                  {selectedJob.applicant_count > 0 && (
-                    <div className="text-xs text-slate-500">{selectedJob.applicant_count} current applicants</div>
-                  )}
-                </div>
-                {selectedJob.company_url && (
-                  <a
-                    href={selectedJob.company_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[#FF6B00] font-bold text-xs hover:underline flex items-center gap-1"
-                  >
-                    View <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                {selectedJob.company} is hiring for this position. Click view to learn more about the company.
-              </p>
-            </div>
           </div>
         </div>
       )}
