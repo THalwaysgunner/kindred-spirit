@@ -109,8 +109,15 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     }
 
     try {
+      // The upstream search API only supports single values for these params.
+      // If multiple are selected, we fetch broader results and rely on client-side filtering.
+      const apiRemote = selectedWorkTypes.length === 1 ? selectedWorkTypes[0] : '';
+      const apiExperienceLevel = selectedExperiences.length === 1 ? selectedExperiences[0] : '';
+
       const response = await ApifyService.searchJobs({
         ...filters,
+        remote: apiRemote,
+        experienceLevel: apiExperienceLevel,
         page,
         pageSize,
         forceRefresh
@@ -484,29 +491,41 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 onClick={() => setOpenSearchDropdown(openSearchDropdown === 'remote' ? null : 'remote')}
                 className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
-                <span className="whitespace-nowrap">{getOptionLabel(remoteOptions, filters.remote)}</span>
+                <span className="whitespace-nowrap">
+                  {selectedWorkTypes.length === 0
+                    ? getOptionLabel(remoteOptions, '')
+                    : selectedWorkTypes.length === 1
+                      ? remoteOptions.find(o => o.value === selectedWorkTypes[0])?.label
+                      : `${selectedWorkTypes.length} selected`}
+                </span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
               {openSearchDropdown === 'remote' && (
                 <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                  {remoteOptions.map((opt) => {
-                    const selected = opt.value === filters.remote;
+                  {remoteOptions.filter(opt => opt.value !== '').map((opt) => {
+                    const selected = selectedWorkTypes.includes(opt.value);
                     return (
                       <button
                         key={opt.value || 'empty'}
                         type="button"
                         onClick={() => {
-                          setFilters({ ...filters, remote: opt.value });
-                          setOpenSearchDropdown(null);
+                          if (selected) {
+                            setSelectedWorkTypes(selectedWorkTypes.filter(v => v !== opt.value));
+                          } else {
+                            setSelectedWorkTypes([...selectedWorkTypes, opt.value]);
+                          }
                         }}
                         className={
-                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
                           (selected
                             ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
                             : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                         }
                       >
+                        <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${selected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
+                          {selected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                        </div>
                         {opt.label}
                       </button>
                     );
@@ -521,29 +540,41 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                 onClick={() => setOpenSearchDropdown(openSearchDropdown === 'experience' ? null : 'experience')}
                 className="w-36 min-w-36 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer transition-colors flex items-center justify-between"
               >
-                <span className="whitespace-nowrap">{getOptionLabel(experienceOptions, filters.experienceLevel)}</span>
+                <span className="whitespace-nowrap">
+                  {selectedExperiences.length === 0
+                    ? getOptionLabel(experienceOptions, '')
+                    : selectedExperiences.length === 1
+                      ? experienceOptions.find(o => o.value === selectedExperiences[0])?.label
+                      : `${selectedExperiences.length} selected`}
+                </span>
                 <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
               </button>
 
               {openSearchDropdown === 'experience' && (
                 <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
-                  {experienceOptions.map((opt) => {
-                    const selected = opt.value === filters.experienceLevel;
+                  {experienceOptions.filter(opt => opt.value !== '').map((opt) => {
+                    const selected = selectedExperiences.includes(opt.value);
                     return (
                       <button
                         key={opt.value || 'empty'}
                         type="button"
                         onClick={() => {
-                          setFilters({ ...filters, experienceLevel: opt.value });
-                          setOpenSearchDropdown(null);
+                          if (selected) {
+                            setSelectedExperiences(selectedExperiences.filter(v => v !== opt.value));
+                          } else {
+                            setSelectedExperiences([...selectedExperiences, opt.value]);
+                          }
                         }}
                         className={
-                          `w-full text-left px-4 py-2 text-xs transition-colors ` +
+                          `w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 ` +
                           (selected
                             ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
                             : 'text-slate-600 dark:text-slate-200 hover:bg-orange-50 hover:text-[#FF6B00] dark:hover:bg-orange-900/20')
                         }
                       >
+                        <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${selected ? 'bg-[#FF6B00] border-[#FF6B00]' : 'border-slate-300'}`}>
+                          {selected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                        </div>
                         {opt.label}
                       </button>
                     );
