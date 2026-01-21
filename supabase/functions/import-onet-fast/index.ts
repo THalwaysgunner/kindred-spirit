@@ -7,13 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function tableNameFromFilename(filename: string): string {
-  let base = filename.replace(/\.txt$/i, '').toLowerCase().trim();
-  base = base.replace(/[^a-z0-9]+/g, '_');
-  base = base.replace(/_+/g, '_').replace(/^_|_$/g, '');
-  return base || 'unknown_table';
-}
-
 function normalizeCol(col: string): string {
   let c = col.trim().replace(/\ufeff/g, '');
   c = c.replace(/[^\w]+/g, '_');
@@ -25,7 +18,6 @@ function normalizeCol(col: string): string {
 
 function escapeValue(val: string): string {
   if (val === '' || val === null || val === undefined) return 'NULL';
-  // Escape single quotes by doubling them
   return `'${val.replace(/'/g, "''")}'`;
 }
 
@@ -43,107 +35,73 @@ serve(async (req) => {
   }
 
   const sql = postgres(dbUrl, { max: 1 });
-  const results: { table: string; rows: number; error?: string }[] = [];
 
   try {
     const formData = await req.formData();
-    const files: File[] = [];
     
-    for (const [key, value] of formData.entries()) {
-      if (value instanceof File && value.name.toLowerCase().endsWith('.txt')) {
-        files.push(value);
-      }
-    }
+    // Get chunk metadata
+    const tableName = formData.get('tableName') as string;
+    const columnsJson = formData.get('columns') as string;
+    const isFirstChunk = formData.get('isFirstChunk') === 'true';
+    const chunkIndex = parseInt(formData.get('chunkIndex') as string || '0');
+    const totalChunks = parseInt(formData.get('totalChunks') as string || '1');
+    const rowsData = formData.get('rows') as string;
 
-    if (files.length === 0) {
-      return new Response(JSON.stringify({ error: 'No .txt files uploaded' }), {
+    if (!tableName || !columnsJson || !rowsData) {
+      return new Response(JSON.stringify({ error: 'Missing required fields: tableName, columns, rows' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Sort files alphabetically
-    files.sort((a, b) => a.name.localeCompare(b.name));
+    const columns: string[] = JSON.parse(columnsJson);
+    const rows: string[][] = JSON.parse(rowsData);
 
-    console.log(`[Import] Processing ${files.length} files`);
+    console.log(`[Import] ${tableName} chunk ${chunkIndex + 1}/${totalChunks}: ${rows.length} rows, isFirst=${isFirstChunk}`);
 
-    for (const file of files) {
-      const tableName = tableNameFromFilename(file.name);
-      const startTime = Date.now();
-      
-      try {
-        const content = await file.text();
-        const lines = content.split(/\r?\n/).filter(line => line.trim());
-        
-        if (lines.length === 0) {
-          results.push({ table: tableName, rows: 0, error: 'Empty file' });
-          continue;
-        }
+    // First chunk: Drop and create table
+    if (isFirstChunk) {
+      await sql.unsafe(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+      const colDefs = columns.map(c => `"${c}" TEXT`).join(', ');
+      await sql.unsafe(`CREATE TABLE "${tableName}" (${colDefs})`);
+      console.log(`[Import] Created table ${tableName}`);
+    }
 
-        // Parse header (TSV)
-        const headerLine = lines[0];
-        const rawCols = headerLine.split('\t');
-        const cols = rawCols.map(normalizeCol);
-        
-        console.log(`[Import] ${file.name} -> ${tableName}: ${cols.length} cols, ${lines.length - 1} rows`);
+    // Bulk insert in batches of 2000 rows
+    const BATCH_SIZE = 2000;
+    let totalInserted = 0;
 
-        // Drop and create table
-        await sql.unsafe(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
-        
-        const colDefs = cols.map(c => `"${c}" TEXT`).join(', ');
-        await sql.unsafe(`CREATE TABLE "${tableName}" (${colDefs})`);
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const valueRows: string[] = [];
 
-        // Bulk insert in batches of 2000 rows
-        const BATCH_SIZE = 2000;
-        const dataLines = lines.slice(1);
-        let totalInserted = 0;
+      for (const row of batch) {
+        const escaped = row.map(escapeValue);
+        valueRows.push(`(${escaped.join(', ')})`);
+      }
 
-        for (let i = 0; i < dataLines.length; i += BATCH_SIZE) {
-          const batch = dataLines.slice(i, i + BATCH_SIZE);
-          const valueRows: string[] = [];
+      if (valueRows.length > 0) {
+        const colList = columns.map(c => `"${c}"`).join(', ');
+        const insertSql = `INSERT INTO "${tableName}" (${colList}) VALUES ${valueRows.join(', ')}`;
+        await sql.unsafe(insertSql);
+        totalInserted += valueRows.length;
+      }
 
-          for (const line of batch) {
-            const values = line.split('\t');
-            // Pad or trim to match column count
-            while (values.length < cols.length) values.push('');
-            const escaped = values.slice(0, cols.length).map(escapeValue);
-            valueRows.push(`(${escaped.join(', ')})`);
-          }
-
-          if (valueRows.length > 0) {
-            const colList = cols.map(c => `"${c}"`).join(', ');
-            const insertSql = `INSERT INTO "${tableName}" (${colList}) VALUES ${valueRows.join(', ')}`;
-            await sql.unsafe(insertSql);
-            totalInserted += valueRows.length;
-          }
-
-          // Log progress every 10k rows
-          if (totalInserted % 10000 < BATCH_SIZE) {
-            console.log(`[Import] ${tableName}: ${totalInserted}/${dataLines.length} rows`);
-          }
-        }
-
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`[Import] ✅ ${tableName}: ${totalInserted} rows in ${elapsed}s`);
-        results.push({ table: tableName, rows: totalInserted });
-
-      } catch (err: any) {
-        console.error(`[Import] ❌ ${tableName}: ${err.message}`);
-        results.push({ table: tableName, rows: 0, error: err.message?.substring(0, 100) });
+      if (totalInserted % 10000 < BATCH_SIZE) {
+        console.log(`[Import] ${tableName}: ${totalInserted}/${rows.length} rows`);
       }
     }
 
     await sql.end();
 
-    const totalRows = results.reduce((sum, r) => sum + r.rows, 0);
-    const successCount = results.filter(r => !r.error).length;
+    console.log(`[Import] ✅ ${tableName} chunk ${chunkIndex + 1}: ${totalInserted} rows inserted`);
 
     return new Response(JSON.stringify({
       success: true,
-      filesProcessed: files.length,
-      tablesCreated: successCount,
-      totalRows,
-      results
+      table: tableName,
+      chunkIndex,
+      totalChunks,
+      rowsInserted: totalInserted
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
