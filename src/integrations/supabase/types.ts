@@ -869,6 +869,54 @@ export type Database = {
         }
         Relationships: []
       }
+      onet_skills: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           email: string | null
@@ -1036,51 +1084,32 @@ export type Database = {
       }
       skills: {
         Row: {
-          data_value: string | null
-          date: string | null
-          domain_source: string | null
-          element_id: string | null
-          element_name: string | null
-          lower_ci_bound: string | null
-          n: string | null
-          not_relevant: string | null
-          o_net_soc_code: string | null
-          recommend_suppress: string | null
-          scale_id: string | null
-          standard_error: string | null
-          upper_ci_bound: string | null
+          created_at: string
+          id: string
+          name: string
+          profile_id: string
         }
         Insert: {
-          data_value?: string | null
-          date?: string | null
-          domain_source?: string | null
-          element_id?: string | null
-          element_name?: string | null
-          lower_ci_bound?: string | null
-          n?: string | null
-          not_relevant?: string | null
-          o_net_soc_code?: string | null
-          recommend_suppress?: string | null
-          scale_id?: string | null
-          standard_error?: string | null
-          upper_ci_bound?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          profile_id: string
         }
         Update: {
-          data_value?: string | null
-          date?: string | null
-          domain_source?: string | null
-          element_id?: string | null
-          element_name?: string | null
-          lower_ci_bound?: string | null
-          n?: string | null
-          not_relevant?: string | null
-          o_net_soc_code?: string | null
-          recommend_suppress?: string | null
-          scale_id?: string | null
-          standard_error?: string | null
-          upper_ci_bound?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          profile_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "skills_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       skills_to_work_activities: {
         Row: {
