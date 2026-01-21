@@ -729,7 +729,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
             <button
               onClick={() => handleSearch(1)}
               disabled={loading}
-              className="px-5 py-2.5 min-w-32 bg-vexo-orange text-white hover:bg-[#e56a42] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+              className="px-5 py-2.5 min-w-32 bg-[#fe794e] text-white hover:bg-[#e56a42] text-xs tracking-wider rounded-md flex items-center justify-center gap-2 transition-all shadow-sm shadow-orange-500/20 ml-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 stroke-[3]" />}
               Search Jobs
