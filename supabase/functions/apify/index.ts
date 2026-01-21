@@ -301,7 +301,11 @@ async function getOrCreateSearchTerm(
     .select('id, search_count')
     .eq('canonical_term', canonicalTerm)
     .eq('location', normalizedLoc)
-    .eq('filters', filters)
+    // NOTE: We intentionally do NOT include `filters` in the lookup.
+    // The job table is filtered at query-time (remote/experience/location), and including
+    // a JSON object in a PostgREST equality filter is brittle and was preventing cache hits.
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (existing) {
@@ -432,7 +436,8 @@ serve(async (req) => {
             .select('id')
             .eq('raw_term', normalizedKeywords)
             .eq('location', hasLocation ? normalizedLocation : '')
-            .eq('filters', filters)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
           if (exactTerm) {
@@ -447,7 +452,8 @@ serve(async (req) => {
               .select('id')
               .eq('canonical_term', canonicalKeywords)
               .eq('location', hasLocation ? normalizedLocation : '')
-              .eq('filters', filters)
+              .order('created_at', { ascending: false })
+              .limit(1)
               .maybeSingle();
 
             if (canonicalTermData) {
@@ -481,36 +487,6 @@ serve(async (req) => {
             jobsPage = jobRows || [];
             totalCount = count || 0;
             console.log(`[Search] Found ${totalCount} jobs from cache via search term`);
-          }
-
-          // Step 2b: If no linked search term found, try direct DB filter by job_title
-          // This allows reusing jobs fetched for other location combinations
-          if (!searchTermId || totalCount === 0) {
-            console.log(`[Search] No linked term, trying direct DB filter for keyword: "${normalizedKeywords}"`);
-            statsMode = 'direct';
-
-            let directQuery = supabase
-              .from('jobs')
-              .select('*', { count: 'exact' })
-              .gt('expires_at', nowIso)
-              .ilike('job_title', `%${normalizedKeywords}%`);
-
-            directQuery = applyWorkTypeFilter(directQuery, remote);
-            directQuery = applyExperienceFilter(directQuery, experienceLevel);
-
-            if (hasLocation) {
-              directQuery = directQuery.ilike('location', `%${normalizedLocation}%`);
-            }
-
-            const { data: directRows, count: directCount } = await directQuery
-              .order('posted_at', { ascending: false })
-              .range(startIndex, endIndex);
-
-            if ((directCount || 0) >= MIN_PAGE_SIZE) {
-              jobsPage = directRows || [];
-              totalCount = directCount || 0;
-              console.log(`[Search] Found ${totalCount} jobs from direct DB filter`);
-            }
           }
 
           // Step 3: If no results OR less than a page, go to API
@@ -600,7 +576,8 @@ serve(async (req) => {
             .eq('raw_term', '')
             .eq('canonical_term', '')
             .eq('location', termLocation)
-            .eq('filters', filters)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
           if (locationTerm) {
