@@ -28,22 +28,42 @@ serve(async (req) => {
     const searchQuery = query.toLowerCase().trim();
     console.log(`[Autocomplete] Searching for: "${searchQuery}"`);
 
+    // Split search into words for better matching
+    const searchWords = searchQuery.split(/\s+/).filter(w => w.length >= 2);
+    
+    // Build search patterns - search for each word
+    const patterns = searchWords.map(word => `%${word}%`);
+    const primaryPattern = `%${searchQuery}%`;
+
     // Search alternate_titles table (has variations like "ML Engineer", "Machine Learning Engineer")
     const { data: alternateTitles, error: altError } = await supabase
       .from('alternate_titles')
       .select('alternate_title, short_title, o_net_soc_code')
-      .or(`alternate_title.ilike.%${searchQuery}%,short_title.ilike.%${searchQuery}%`)
-      .limit(limit * 2);
+      .or(`alternate_title.ilike.${primaryPattern},short_title.ilike.${primaryPattern}`)
+      .limit(limit * 3);
 
     if (altError) {
       console.error('[Autocomplete] Error searching alternate_titles:', altError);
+    }
+
+    // Also search with individual words for better fuzzy matching
+    let wordMatchTitles: any[] = [];
+    if (searchWords.length > 0 && (alternateTitles?.length || 0) < limit) {
+      // Search for titles containing all the words
+      const { data: wordMatches } = await supabase
+        .from('alternate_titles')
+        .select('alternate_title, short_title, o_net_soc_code')
+        .ilike('alternate_title', patterns[0])
+        .limit(limit * 2);
+      
+      wordMatchTitles = wordMatches || [];
     }
 
     // Search occupation_data table (has main occupation titles)
     const { data: occupations, error: occError } = await supabase
       .from('occupation_data')
       .select('title, o_net_soc_code')
-      .ilike('title', `%${searchQuery}%`)
+      .ilike('title', primaryPattern)
       .limit(limit);
 
     if (occError) {
@@ -54,7 +74,7 @@ serve(async (req) => {
     const { data: reportedTitles, error: repError } = await supabase
       .from('sample_of_reported_titles')
       .select('reported_job_title, o_net_soc_code')
-      .ilike('reported_job_title', `%${searchQuery}%`)
+      .ilike('reported_job_title', primaryPattern)
       .limit(limit);
 
     if (repError) {
@@ -65,7 +85,7 @@ serve(async (req) => {
     const titleSet = new Map<string, { title: string; onetCode: string | null }>();
 
     // Add alternate titles (highest priority - these are official variations)
-    (alternateTitles || []).forEach(item => {
+    [...(alternateTitles || []), ...wordMatchTitles].forEach(item => {
       const title = item.alternate_title || item.short_title;
       if (title && !titleSet.has(title.toLowerCase())) {
         titleSet.set(title.toLowerCase(), { 
@@ -95,13 +115,30 @@ serve(async (req) => {
       }
     });
 
-    // Sort by relevance (titles starting with query first, then contains)
+    // Sort by relevance (titles starting with query first, then contains, then word matches)
     const suggestions = Array.from(titleSet.values())
+      .filter(item => {
+        // For multi-word queries, check if title contains all words
+        if (searchWords.length > 1) {
+          const lowerTitle = item.title.toLowerCase();
+          return searchWords.every(word => lowerTitle.includes(word));
+        }
+        return true;
+      })
       .sort((a, b) => {
-        const aStarts = a.title.toLowerCase().startsWith(searchQuery);
-        const bStarts = b.title.toLowerCase().startsWith(searchQuery);
+        const aLower = a.title.toLowerCase();
+        const bLower = b.title.toLowerCase();
+        const aStarts = aLower.startsWith(searchQuery);
+        const bStarts = bLower.startsWith(searchQuery);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
+        
+        // Prefer exact word match over partial
+        const aExact = aLower.includes(searchQuery);
+        const bExact = bLower.includes(searchQuery);
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+        
         return a.title.length - b.title.length; // Shorter titles first
       })
       .slice(0, limit);
