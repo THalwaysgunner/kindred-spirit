@@ -774,7 +774,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                     <th className="pb-3 font-normal">Salary</th>
                     <th className="pb-3 font-normal">Easy Apply</th>
                     <th className="pb-3 font-normal">Link</th>
-                    <th className="pb-3 font-normal">CV</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -817,7 +816,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         </span>
                       </td>
                       <td className="py-4">
-                        <span className="text-sm text-slate-500 dark:text-slate-400">{job.posted_at || 'Unknown'}</span>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                          {job.posted_at 
+                            ? new Date(job.posted_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            : 'Unknown'}
+                        </span>
                       </td>
                       <td className="py-4">
                         <span className="text-sm text-slate-500 dark:text-slate-400">{job.salary || '-'}</span>
@@ -842,19 +845,6 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
                         >
                           <ExternalLink className="w-4 h-4" />
                         </a>
-                      </td>
-                      <td className="py-4">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAnalyzeJob(job);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-[#FF6B00] hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 transition-colors text-xs font-medium"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          Create CV
-                        </button>
                       </td>
                     </tr>
                   ))}
