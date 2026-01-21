@@ -172,14 +172,23 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       const apiRemote = selectedWorkTypes.length === 1 ? selectedWorkTypes[0] : '';
       const apiExperienceLevel = selectedExperiences.length === 1 ? selectedExperiences[0] : '';
 
-      const response = await ApifyService.searchJobs({
-        ...filters,
+      // Always send empty easy_apply to API - we filter client-side only
+      // This ensures we get ALL jobs from the API, not just easy apply ones
+      const searchParams = {
+        keywords: filters.keywords,
+        location: filters.location,
         remote: apiRemote,
         experienceLevel: apiExperienceLevel,
+        date_posted: '',
+        easy_apply: '', // Never filter by easy_apply at API level - client-side only
         page,
         pageSize,
         forceRefresh
-      });
+      };
+
+      console.log('[JobSearch] Sending to API:', searchParams);
+
+      const response = await ApifyService.searchJobs(searchParams);
       
       setResults(response.jobs);
       setTotalCount(response.totalCount);
