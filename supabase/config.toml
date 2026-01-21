@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.import-onet-fast]
 verify_jwt = false
+
+[functions.job-autocomplete]
+verify_jwt = false

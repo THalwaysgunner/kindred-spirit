@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Search,
   MapPin,
@@ -21,9 +21,15 @@ import {
 } from 'lucide-react';
 import { ApifyService } from '../services/apifyService';
 import { JobSearchResult, SearchFilters } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface JobSearchProps {
   onAnalyzeJob: (job: JobSearchResult) => void;
+}
+
+interface AutocompleteSuggestion {
+  title: string;
+  onetCode: string | null;
 }
 
 export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
@@ -33,6 +39,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [error, setError] = useState<string | null>(null);
   const [easyApplyFilter, setEasyApplyFilter] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState<AutocompleteSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
+  const keywordsInputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Filter bar dropdowns (for filtering loaded results - multi-select)
   const [openFilterDropdown, setOpenFilterDropdown] = useState<'remote' | 'experience' | 'date' | null>(null);
@@ -65,6 +79,50 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     remote: '',
     easy_apply: ''
   });
+
+  // Debounced autocomplete fetch
+  const fetchSuggestions = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('job-autocomplete', {
+        body: { query, limit: 8 }
+      });
+
+      if (error) throw error;
+      
+      setSuggestions(data?.suggestions || []);
+      setShowSuggestions(true);
+      setSelectedSuggestionIndex(-1);
+    } catch (err) {
+      console.error('Autocomplete error:', err);
+      setSuggestions([]);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }, []);
+
+  // Debounce autocomplete requests
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchSuggestions(filters.keywords);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [filters.keywords, fetchSuggestions]);
+
+  // Handle selecting a suggestion
+  const handleSelectSuggestion = (suggestion: AutocompleteSuggestion) => {
+    setFilters({ ...filters, keywords: suggestion.title });
+    setShowSuggestions(false);
+    setSuggestions([]);
+    keywordsInputRef.current?.focus();
+  };
 
   // Client-side filter options (all applied after fetching)
 
@@ -146,9 +204,55 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSearch(1);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle autocomplete navigation
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => 
+          prev < suggestions.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => 
+          prev > 0 ? prev - 1 : suggestions.length - 1
+        );
+        return;
+      }
+      if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
+        e.preventDefault();
+        handleSelectSuggestion(suggestions[selectedSuggestionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowSuggestions(false);
+        return;
+      }
+    }
+    
+    if (e.key === 'Enter') {
+      setShowSuggestions(false);
+      handleSearch(1);
+    }
   };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionsRef.current && 
+        !suggestionsRef.current.contains(event.target as Node) &&
+        keywordsInputRef.current &&
+        !keywordsInputRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Filter results based on client-side filters (multi-select work types, experiences, date, easy apply)
   const filteredResults = useMemo(() => {
@@ -460,15 +564,45 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         <div className="flex items-center justify-between px-8 py-5 w-full min-w-[1200px]">
           <div className="flex items-center gap-4 shrink-0">
             <div className="relative group w-80 min-w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
               <input
+                ref={keywordsInputRef}
                 type="text"
                 placeholder="Search by title, skill, or company"
                 value={filters.keywords}
                 onChange={(e) => setFilters({ ...filters, keywords: e.target.value })}
                 onKeyDown={handleKeyDown}
+                onFocus={() => filters.keywords.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-transparent rounded-lg text-xs tracking-wider outline-none focus:border-slate-300 transition-all placeholder:text-slate-400"
+                autoComplete="off"
               />
+              {loadingSuggestions && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+              )}
+              
+              {/* Autocomplete Suggestions Dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div 
+                  ref={suggestionsRef}
+                  className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 shadow-2xl z-50 rounded-lg border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto"
+                >
+                  {suggestions.map((suggestion, index) => (
+                    <button
+                      key={`${suggestion.title}-${index}`}
+                      type="button"
+                      onClick={() => handleSelectSuggestion(suggestion)}
+                      className={`w-full text-left px-4 py-2.5 text-xs transition-colors flex items-center gap-2 ${
+                        index === selectedSuggestionIndex
+                          ? 'bg-orange-50 text-[#FF6B00] dark:bg-orange-900/20'
+                          : 'text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{suggestion.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="relative group w-60 min-w-60">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
