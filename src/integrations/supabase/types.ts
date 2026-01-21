@@ -14,6 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
+      abilities: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
+      abilities_to_work_activities: {
+        Row: {
+          abilities_element_id: string | null
+          abilities_element_name: string | null
+          work_activities_element_id: string | null
+          work_activities_element_name: string | null
+        }
+        Insert: {
+          abilities_element_id?: string | null
+          abilities_element_name?: string | null
+          work_activities_element_id?: string | null
+          work_activities_element_name?: string | null
+        }
+        Update: {
+          abilities_element_id?: string | null
+          abilities_element_name?: string | null
+          work_activities_element_id?: string | null
+          work_activities_element_name?: string | null
+        }
+        Relationships: []
+      }
+      abilities_to_work_context: {
+        Row: {
+          abilities_element_id: string | null
+          abilities_element_name: string | null
+          work_context_element_id: string | null
+          work_context_element_name: string | null
+        }
+        Insert: {
+          abilities_element_id?: string | null
+          abilities_element_name?: string | null
+          work_context_element_id?: string | null
+          work_context_element_name?: string | null
+        }
+        Update: {
+          abilities_element_id?: string | null
+          abilities_element_name?: string | null
+          work_context_element_id?: string | null
+          work_context_element_name?: string | null
+        }
+        Relationships: []
+      }
+      alternate_titles: {
+        Row: {
+          alternate_title: string | null
+          o_net_soc_code: string | null
+          short_title: string | null
+          source_s: string | null
+        }
+        Insert: {
+          alternate_title?: string | null
+          o_net_soc_code?: string | null
+          short_title?: string | null
+          source_s?: string | null
+        }
+        Update: {
+          alternate_title?: string | null
+          o_net_soc_code?: string | null
+          short_title?: string | null
+          source_s?: string | null
+        }
+        Relationships: []
+      }
       applications: {
         Row: {
           about_the_role: string | null
@@ -103,6 +214,66 @@ export type Database = {
           },
         ]
       }
+      basic_interests_to_riasec: {
+        Row: {
+          basic_interests_element_id: string | null
+          basic_interests_element_name: string | null
+          riasec_element_id: string | null
+          riasec_element_name: string | null
+        }
+        Insert: {
+          basic_interests_element_id?: string | null
+          basic_interests_element_name?: string | null
+          riasec_element_id?: string | null
+          riasec_element_name?: string | null
+        }
+        Update: {
+          basic_interests_element_id?: string | null
+          basic_interests_element_name?: string | null
+          riasec_element_id?: string | null
+          riasec_element_name?: string | null
+        }
+        Relationships: []
+      }
+      content_model_reference: {
+        Row: {
+          description: string | null
+          element_id: string | null
+          element_name: string | null
+        }
+        Insert: {
+          description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+        }
+        Update: {
+          description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+        }
+        Relationships: []
+      }
+      dwa_reference: {
+        Row: {
+          dwa_id: string | null
+          dwa_title: string | null
+          element_id: string | null
+          iwa_id: string | null
+        }
+        Insert: {
+          dwa_id?: string | null
+          dwa_title?: string | null
+          element_id?: string | null
+          iwa_id?: string | null
+        }
+        Update: {
+          dwa_id?: string | null
+          dwa_title?: string | null
+          element_id?: string | null
+          iwa_id?: string | null
+        }
+        Relationships: []
+      }
       education: {
         Row: {
           created_at: string
@@ -143,6 +314,108 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      education_training_and_experience: {
+        Row: {
+          category: string | null
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
+      education_training_and_experience_categories: {
+        Row: {
+          category: string | null
+          category_description: string | null
+          element_id: string | null
+          element_name: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          category?: string | null
+          category_description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          category?: string | null
+          category_description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      emerging_tasks: {
+        Row: {
+          category: string | null
+          date: string | null
+          domain_source: string | null
+          o_net_soc_code: string | null
+          original_task: string | null
+          original_task_id: string | null
+          task: string | null
+        }
+        Insert: {
+          category?: string | null
+          date?: string | null
+          domain_source?: string | null
+          o_net_soc_code?: string | null
+          original_task?: string | null
+          original_task_id?: string | null
+          task?: string | null
+        }
+        Update: {
+          category?: string | null
+          date?: string | null
+          domain_source?: string | null
+          o_net_soc_code?: string | null
+          original_task?: string | null
+          original_task_id?: string | null
+          task?: string | null
+        }
+        Relationships: []
       }
       experience: {
         Row: {
@@ -190,6 +463,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      interests: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          o_net_soc_code: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          o_net_soc_code?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      interests_illustrative_activities: {
+        Row: {
+          activity: string | null
+          element_id: string | null
+          element_name: string | null
+          interest_type: string | null
+        }
+        Insert: {
+          activity?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          interest_type?: string | null
+        }
+        Update: {
+          activity?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          interest_type?: string | null
+        }
+        Relationships: []
+      }
+      interests_illustrative_occupations: {
+        Row: {
+          element_id: string | null
+          element_name: string | null
+          interest_type: string | null
+          o_net_soc_code: string | null
+        }
+        Insert: {
+          element_id?: string | null
+          element_name?: string | null
+          interest_type?: string | null
+          o_net_soc_code?: string | null
+        }
+        Update: {
+          element_id?: string | null
+          element_name?: string | null
+          interest_type?: string | null
+          o_net_soc_code?: string | null
+        }
+        Relationships: []
+      }
+      iwa_reference: {
+        Row: {
+          element_id: string | null
+          iwa_id: string | null
+          iwa_title: string | null
+        }
+        Insert: {
+          element_id?: string | null
+          iwa_id?: string | null
+          iwa_title?: string | null
+        }
+        Update: {
+          element_id?: string | null
+          iwa_id?: string | null
+          iwa_title?: string | null
+        }
+        Relationships: []
       }
       job_search_cache: {
         Row: {
@@ -266,6 +629,57 @@ export type Database = {
           },
         ]
       }
+      job_zone_reference: {
+        Row: {
+          education: string | null
+          examples: string | null
+          experience: string | null
+          job_training: string | null
+          job_zone: string | null
+          name: string | null
+          svp_range: string | null
+        }
+        Insert: {
+          education?: string | null
+          examples?: string | null
+          experience?: string | null
+          job_training?: string | null
+          job_zone?: string | null
+          name?: string | null
+          svp_range?: string | null
+        }
+        Update: {
+          education?: string | null
+          examples?: string | null
+          experience?: string | null
+          job_training?: string | null
+          job_zone?: string | null
+          name?: string | null
+          svp_range?: string | null
+        }
+        Relationships: []
+      }
+      job_zones: {
+        Row: {
+          date: string | null
+          domain_source: string | null
+          job_zone: string | null
+          o_net_soc_code: string | null
+        }
+        Insert: {
+          date?: string | null
+          domain_source?: string | null
+          job_zone?: string | null
+          o_net_soc_code?: string | null
+        }
+        Update: {
+          date?: string | null
+          domain_source?: string | null
+          job_zone?: string | null
+          o_net_soc_code?: string | null
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           applicant_count: number | null
@@ -338,6 +752,96 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
+      level_scale_anchors: {
+        Row: {
+          anchor_description: string | null
+          anchor_value: string | null
+          element_id: string | null
+          element_name: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          anchor_description?: string | null
+          anchor_value?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          anchor_description?: string | null
+          anchor_value?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
+      }
+      occupation_data: {
+        Row: {
+          description: string | null
+          o_net_soc_code: string | null
+          title: string | null
+        }
+        Insert: {
+          description?: string | null
+          o_net_soc_code?: string | null
+          title?: string | null
+        }
+        Update: {
+          description?: string | null
+          o_net_soc_code?: string | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           email: string | null
@@ -371,6 +875,81 @@ export type Database = {
           profile_picture_url?: string | null
           summary?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      read_me: {
+        Row: {
+          o_net_30_1_database: string | null
+        }
+        Insert: {
+          o_net_30_1_database?: string | null
+        }
+        Update: {
+          o_net_30_1_database?: string | null
+        }
+        Relationships: []
+      }
+      related_occupations: {
+        Row: {
+          index: string | null
+          o_net_soc_code: string | null
+          related_o_net_soc_code: string | null
+          relatedness_tier: string | null
+        }
+        Insert: {
+          index?: string | null
+          o_net_soc_code?: string | null
+          related_o_net_soc_code?: string | null
+          relatedness_tier?: string | null
+        }
+        Update: {
+          index?: string | null
+          o_net_soc_code?: string | null
+          related_o_net_soc_code?: string | null
+          relatedness_tier?: string | null
+        }
+        Relationships: []
+      }
+      riasec_keywords: {
+        Row: {
+          element_id: string | null
+          element_name: string | null
+          keyword: string | null
+          keyword_type: string | null
+        }
+        Insert: {
+          element_id?: string | null
+          element_name?: string | null
+          keyword?: string | null
+          keyword_type?: string | null
+        }
+        Update: {
+          element_id?: string | null
+          element_name?: string | null
+          keyword?: string | null
+          keyword_type?: string | null
+        }
+        Relationships: []
+      }
+      scales_reference: {
+        Row: {
+          maximum: string | null
+          minimum: string | null
+          scale_id: string | null
+          scale_name: string | null
+        }
+        Insert: {
+          maximum?: string | null
+          minimum?: string | null
+          scale_id?: string | null
+          scale_name?: string | null
+        }
+        Update: {
+          maximum?: string | null
+          minimum?: string | null
+          scale_id?: string | null
+          scale_name?: string | null
         }
         Relationships: []
       }
@@ -412,32 +991,318 @@ export type Database = {
       }
       skills: {
         Row: {
-          created_at: string
-          id: string
-          name: string
-          profile_id: string
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
         }
         Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          profile_id: string
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
         }
         Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          profile_id?: string
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "skills_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
+      }
+      skills_to_work_activities: {
+        Row: {
+          skills_element_id: string | null
+          skills_element_name: string | null
+          work_activities_element_id: string | null
+          work_activities_element_name: string | null
+        }
+        Insert: {
+          skills_element_id?: string | null
+          skills_element_name?: string | null
+          work_activities_element_id?: string | null
+          work_activities_element_name?: string | null
+        }
+        Update: {
+          skills_element_id?: string | null
+          skills_element_name?: string | null
+          work_activities_element_id?: string | null
+          work_activities_element_name?: string | null
+        }
+        Relationships: []
+      }
+      survey_booklet_locations: {
+        Row: {
+          element_id: string | null
+          element_name: string | null
+          scale_id: string | null
+          survey_item_number: string | null
+        }
+        Insert: {
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+          survey_item_number?: string | null
+        }
+        Update: {
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+          survey_item_number?: string | null
+        }
+        Relationships: []
+      }
+      task_statements: {
+        Row: {
+          date: string | null
+          domain_source: string | null
+          incumbents_responding: string | null
+          o_net_soc_code: string | null
+          task: string | null
+          task_id: string | null
+          task_type: string | null
+        }
+        Insert: {
+          date?: string | null
+          domain_source?: string | null
+          incumbents_responding?: string | null
+          o_net_soc_code?: string | null
+          task?: string | null
+          task_id?: string | null
+          task_type?: string | null
+        }
+        Update: {
+          date?: string | null
+          domain_source?: string | null
+          incumbents_responding?: string | null
+          o_net_soc_code?: string | null
+          task?: string | null
+          task_id?: string | null
+          task_type?: string | null
+        }
+        Relationships: []
+      }
+      tasks_to_dwas: {
+        Row: {
+          date: string | null
+          domain_source: string | null
+          dwa_id: string | null
+          o_net_soc_code: string | null
+          task_id: string | null
+        }
+        Insert: {
+          date?: string | null
+          domain_source?: string | null
+          dwa_id?: string | null
+          o_net_soc_code?: string | null
+          task_id?: string | null
+        }
+        Update: {
+          date?: string | null
+          domain_source?: string | null
+          dwa_id?: string | null
+          o_net_soc_code?: string | null
+          task_id?: string | null
+        }
+        Relationships: []
+      }
+      technology_skills: {
+        Row: {
+          commodity_code: string | null
+          commodity_title: string | null
+          example: string | null
+          hot_technology: string | null
+          in_demand: string | null
+          o_net_soc_code: string | null
+        }
+        Insert: {
+          commodity_code?: string | null
+          commodity_title?: string | null
+          example?: string | null
+          hot_technology?: string | null
+          in_demand?: string | null
+          o_net_soc_code?: string | null
+        }
+        Update: {
+          commodity_code?: string | null
+          commodity_title?: string | null
+          example?: string | null
+          hot_technology?: string | null
+          in_demand?: string | null
+          o_net_soc_code?: string | null
+        }
+        Relationships: []
+      }
+      tools_used: {
+        Row: {
+          commodity_code: string | null
+          commodity_title: string | null
+          example: string | null
+          o_net_soc_code: string | null
+        }
+        Insert: {
+          commodity_code?: string | null
+          commodity_title?: string | null
+          example?: string | null
+          o_net_soc_code?: string | null
+        }
+        Update: {
+          commodity_code?: string | null
+          commodity_title?: string | null
+          example?: string | null
+          o_net_soc_code?: string | null
+        }
+        Relationships: []
+      }
+      work_activities: {
+        Row: {
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
+      work_context: {
+        Row: {
+          category: string | null
+          data_value: string | null
+          date: string | null
+          domain_source: string | null
+          element_id: string | null
+          element_name: string | null
+          lower_ci_bound: string | null
+          n: string | null
+          not_relevant: string | null
+          o_net_soc_code: string | null
+          recommend_suppress: string | null
+          scale_id: string | null
+          standard_error: string | null
+          upper_ci_bound: string | null
+        }
+        Insert: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Update: {
+          category?: string | null
+          data_value?: string | null
+          date?: string | null
+          domain_source?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          lower_ci_bound?: string | null
+          n?: string | null
+          not_relevant?: string | null
+          o_net_soc_code?: string | null
+          recommend_suppress?: string | null
+          scale_id?: string | null
+          standard_error?: string | null
+          upper_ci_bound?: string | null
+        }
+        Relationships: []
+      }
+      work_context_categories: {
+        Row: {
+          category: string | null
+          category_description: string | null
+          element_id: string | null
+          element_name: string | null
+          scale_id: string | null
+        }
+        Insert: {
+          category?: string | null
+          category_description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Update: {
+          category?: string | null
+          category_description?: string | null
+          element_id?: string | null
+          element_name?: string | null
+          scale_id?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
