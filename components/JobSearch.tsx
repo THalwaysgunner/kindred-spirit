@@ -312,9 +312,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     });
   }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
-  // Stats calculations - based on filtered results (what user sees in table)
+  // Stats calculations
+  // - Total Results should reflect ALL results for the current search (not just current page)
+  // - Other stats reflect what's currently loaded/filtered in the table
   const stats = useMemo(() => {
-    const total = filteredResults.length;
+    const total = totalCount || filteredResults.length;
     const remote = filteredResults.filter(j => j.work_type?.toLowerCase().includes('remote')).length;
     const easyApply = filteredResults.filter(j => j.is_easy_apply).length;
     const recent = filteredResults.filter(j => j.posted_at?.toLowerCase().includes('hour') || j.posted_at?.toLowerCase().includes('minute')).length;
@@ -325,7 +327,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [filteredResults]);
+  }, [filteredResults, totalCount]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
