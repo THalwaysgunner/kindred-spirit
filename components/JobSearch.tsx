@@ -502,7 +502,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               </button>
 
               {openSearchDropdown === 'remote' && (
-                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                <div className="absolute top-full mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                   {remoteOptions.filter(opt => opt.value !== '').map((opt) => {
                     const selected = selectedWorkTypes.includes(opt.value);
                     return (
@@ -551,7 +551,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
               </button>
 
               {openSearchDropdown === 'experience' && (
-                <div className="absolute top-full mt-1 w-40 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
+                <div className="absolute top-full mt-1 w-36 bg-white dark:bg-slate-800 shadow-2xl z-50 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
                   {experienceOptions.filter(opt => opt.value !== '').map((opt) => {
                     const selected = selectedExperiences.includes(opt.value);
                     return (
