@@ -16,7 +16,8 @@ const ACTOR_LINKEDIN_PROFILE = 'apimaestro~linkedin-profile-detail';
 // Config
 const JOBS_PER_API_CALL = 100;
 const STALE_HOURS = 24; // Consider data stale after 24 hours
-const MIN_JOBS_THRESHOLD = 50; // Fetch more if we have less than this
+// NOTE: We intentionally do NOT refetch based on “too few jobs”.
+// Refetching on small result sets can cause repeated paid scrapes for niche queries.
 
 // Parse relative date strings like "2 days ago" into actual timestamps
 function parsePostedDate(postedText: string): Date {
@@ -112,50 +113,161 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
 }
 
 // Get or create search term (no AI - just stores the raw term)
-async function getOrCreateSearchTerm(supabase: any, term: string, location: string): Promise<{ searchTerm: string; searchTermId: string }> {
-  const normalizedInput = (term || '').toLowerCase().trim();
-  const normalizedLocation = (location || '').toLowerCase().trim();
+function normalizeText(input: string): string {
+  return (input || '')
+    .toLowerCase()
+    .replace(/[\u2019']/g, "'")
+    .replace(/[^a-z0-9\s+\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  // Check if we already have this term
-  const { data: existingTerm } = await supabase
-    .from('search_terms')
-    .select('*')
-    .eq('raw_term', normalizedInput)
-    .eq('location', normalizedLocation)
-    .maybeSingle();
+function singularizeLastWord(phrase: string): string {
+  const parts = phrase.split(' ').filter(Boolean);
+  if (parts.length === 0) return phrase;
 
-  if (existingTerm) {
-    // Increment search count
-    await supabase
-      .from('search_terms')
-      .update({ 
-        search_count: existingTerm.search_count + 1,
-        last_searched_at: new Date().toISOString()
-      })
-      .eq('id', existingTerm.id);
+  const last = parts[parts.length - 1];
 
-    return {
-      searchTerm: existingTerm.raw_term,
-      searchTermId: existingTerm.id
-    };
+  // companies -> company
+  if (last.length > 3 && /ies$/.test(last)) {
+    parts[parts.length - 1] = last.replace(/ies$/, 'y');
+    return parts.join(' ');
   }
 
-  // Create new term (no AI normalization - just store raw term as-is)
-  const { data: newTerm } = await supabase
+  // engineers -> engineer (avoid business -> busines by skipping *ss)
+  if (last.length > 3 && /s$/.test(last) && !/ss$/.test(last)) {
+    parts[parts.length - 1] = last.replace(/s$/, '');
+  }
+
+  return parts.join(' ');
+}
+
+function canonicalizeKeywords(raw: string): string {
+  let s = normalizeText(raw);
+
+  // Common typo fixes
+  s = s.replace(/\bscientis\b/g, 'scientist');
+  s = s.replace(/\benginier\b/g, 'engineer');
+  s = s.replace(/\bdevoloper\b/g, 'developer');
+
+  // Common abbreviation expansions (keep conservative)
+  s = s.replace(/\bsr\b/g, 'senior');
+  s = s.replace(/\bjr\b/g, 'junior');
+  s = s.replace(/\beng\b/g, 'engineer');
+  s = s.replace(/\bdev\b/g, 'developer');
+  s = s.replace(/\bmgr\b/g, 'manager');
+  s = s.replace(/\bswe\b/g, 'software engineer');
+  s = s.replace(/\bml\b/g, 'machine learning');
+
+  s = s.replace(/\s+/g, ' ').trim();
+  s = singularizeLastWord(s);
+  return s;
+}
+
+async function upsertOrIncrementSearchTerm(
+  supabase: any,
+  payload: { raw_term: string; canonical_term: string; location: string }
+): Promise<any> {
+  const nowIso = new Date().toISOString();
+
+  const { data: existing } = await supabase
     .from('search_terms')
-    .upsert({
-      raw_term: normalizedInput,
-      canonical_term: normalizedInput, // Same as raw - no AI transformation
-      location: normalizedLocation,
-      search_count: 1,
-      last_searched_at: new Date().toISOString()
-    }, { onConflict: 'raw_term,location' })
+    .select('*')
+    .eq('raw_term', payload.raw_term)
+    .eq('location', payload.location)
+    .maybeSingle();
+
+  if (existing) {
+    const nextCount = (existing.search_count || 0) + 1;
+    const update: any = {
+      search_count: nextCount,
+      last_searched_at: nowIso,
+    };
+    if (!existing.canonical_term || existing.canonical_term !== payload.canonical_term) {
+      update.canonical_term = payload.canonical_term;
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('search_terms')
+      .update(update)
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    return updated;
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('search_terms')
+    .upsert(
+      {
+        raw_term: payload.raw_term,
+        canonical_term: payload.canonical_term,
+        location: payload.location,
+        search_count: 1,
+        last_searched_at: nowIso,
+      },
+      { onConflict: 'raw_term,location' }
+    )
     .select()
     .single();
 
+  if (insertError) throw insertError;
+  return inserted;
+}
+
+// Returns a canonical group for caching: all raw variants that share the same canonical_term.
+async function getSearchTermGroup(
+  supabase: any,
+  term: string,
+  location: string
+): Promise<{
+  rawTerm: string;
+  canonicalTerm: string;
+  canonicalSearchTermId: string;
+  relatedTermIds: string[];
+  canonicalLastFetchedAt: string | null;
+  normalizedLocation: string;
+}> {
+  const rawTerm = normalizeText(term);
+  const normalizedLocation = normalizeText(location);
+
+  // 1) Compute canonical term (deterministic + conservative)
+  const canonicalTerm = canonicalizeKeywords(rawTerm) || rawTerm;
+
+  // 2) Track the raw term → canonical mapping (analytics + learning)
+  await upsertOrIncrementSearchTerm(supabase, {
+    raw_term: rawTerm,
+    canonical_term: canonicalTerm,
+    location: normalizedLocation,
+  });
+
+  // 3) Ensure a dedicated canonical row exists (we link cached jobs to this ID)
+  const canonicalRow = await upsertOrIncrementSearchTerm(supabase, {
+    raw_term: canonicalTerm,
+    canonical_term: canonicalTerm,
+    location: normalizedLocation,
+  });
+
+  // 4) Fetch all term IDs that map to the canonical (for backwards compatibility)
+  const { data: relatedTerms } = await supabase
+    .from('search_terms')
+    .select('id')
+    .eq('canonical_term', canonicalTerm)
+    .eq('location', normalizedLocation);
+
+  const relatedTermIds = Array.from(
+    new Set([canonicalRow?.id, ...(relatedTerms || []).map((t: any) => t.id)].filter(Boolean))
+  );
+
   return {
-    searchTerm: normalizedInput,
-    searchTermId: newTerm?.id || ''
+    rawTerm,
+    canonicalTerm,
+    canonicalSearchTermId: canonicalRow?.id || '',
+    relatedTermIds,
+    canonicalLastFetchedAt: canonicalRow?.last_fetched_at || null,
+    normalizedLocation,
   };
 }
 
@@ -272,20 +384,22 @@ serve(async (req) => {
 
         console.log(`[Search] Query: "${keywords}" in "${location}", page ${page}, forceRefresh: ${forceRefresh}`);
 
-        // Step 1: Get or create search term (no AI - uses raw term)
-        const { searchTerm, searchTermId } = await getOrCreateSearchTerm(supabase, keywords, location);
-        console.log(`[Search] Search term: "${searchTerm}"`);
+        // Step 1: Build a canonical cache group so variants share the same cached jobs.
+        const {
+          rawTerm,
+          canonicalTerm,
+          canonicalSearchTermId,
+          relatedTermIds,
+          canonicalLastFetchedAt,
+          normalizedLocation,
+        } = await getSearchTermGroup(supabase, keywords, location);
+
+        console.log(`[Search] Raw term: "${rawTerm}" -> Canonical: "${canonicalTerm}" (location: "${normalizedLocation}")`);
 
         // Step 2: Check if we have fresh data
         const staleThreshold = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000).toISOString();
-        
-        const { data: searchTermRow } = await supabase
-          .from('search_terms')
-          .select('*')
-          .eq('id', searchTermId)
-          .single();
 
-        const isStale = !searchTermRow?.last_fetched_at || searchTermRow.last_fetched_at < staleThreshold;
+        const isStale = !canonicalLastFetchedAt || canonicalLastFetchedAt < staleThreshold;
 
         // Step 3: Get existing jobs from DB
         const startIndex = (page - 1) * pageSize;
@@ -300,16 +414,9 @@ serve(async (req) => {
           .gt('expires_at', new Date().toISOString())
           .order('posted_at', { ascending: false });
 
-        // Filter by search term
-        if (searchTermId) {
-          // Get all search terms with the same raw term (for cache sharing)
-          const { data: relatedTerms } = await supabase
-            .from('search_terms')
-            .select('id')
-            .eq('raw_term', searchTerm);
-
-          const termIds = relatedTerms?.map(t => t.id) || [searchTermId];
-          jobQuery = jobQuery.in('job_search_links.search_term_id', termIds);
+        // Filter by canonical group term IDs (so plural/typo variants share cache)
+        if (relatedTermIds.length > 0) {
+          jobQuery = jobQuery.in('job_search_links.search_term_id', relatedTermIds);
         }
 
         // Apply filters
@@ -330,14 +437,15 @@ serve(async (req) => {
         console.log(`[Search] Found ${allJobs.length} jobs in DB`);
 
         // Step 4: Decide if we need to fetch from API
-        const needsApiFetch = forceRefresh || isStale || allJobs.length < MIN_JOBS_THRESHOLD;
+        const needsApiFetch = forceRefresh || isStale;
 
         if (needsApiFetch) {
           console.log(`[Search] Fetching from API (stale: ${isStale}, jobs: ${allJobs.length}, force: ${forceRefresh})`);
 
           const inputPayload = {
-            keywords: searchTerm, // Use raw search term - no AI transformation
-            location: location,
+            // Use canonical keywords for scraping to reduce “typo/plural” misses.
+            keywords: canonicalTerm,
+            location: normalizedLocation,
             page_number: 1,
             remote: params.remote || "",
             date_posted: params.date_posted || "",
@@ -353,14 +461,14 @@ serve(async (req) => {
             console.log(`[Search] Fetched ${newJobsArray.length} new jobs from API`);
 
             // Store new jobs
-            const storedCount = await storeJobs(supabase, newJobsArray, searchTermId);
+            const storedCount = await storeJobs(supabase, newJobsArray, canonicalSearchTermId);
             console.log(`[Search] Stored ${storedCount} jobs`);
 
             // Update last_fetched_at
             await supabase
               .from('search_terms')
               .update({ last_fetched_at: new Date().toISOString() })
-              .eq('id', searchTermId);
+              .eq('id', canonicalSearchTermId);
 
             // Re-fetch from DB to get deduplicated results
             const { data: updatedJobs } = await supabase
@@ -373,7 +481,7 @@ serve(async (req) => {
             const { data: linkedJobIds } = await supabase
               .from('job_search_links')
               .select('job_id')
-              .in('search_term_id', [searchTermId]);
+              .in('search_term_id', relatedTermIds.length > 0 ? relatedTermIds : [canonicalSearchTermId]);
 
             const linkedIds = new Set(linkedJobIds?.map(l => l.job_id) || []);
             allJobs = (updatedJobs || []).filter(j => linkedIds.has(j.id));
