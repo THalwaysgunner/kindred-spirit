@@ -247,7 +247,16 @@ async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Prom
         benefits: job.benefits || [],
         skills: job.skills || [],
         is_easy_apply: job.is_easy_apply || job.easy_apply || false,
-        applicant_count: job.applicant_count || null,
+        applicant_count: (() => {
+          const raw = job.applicant_count;
+          if (raw == null) return null;
+          if (typeof raw === 'number') return raw;
+          // Parse strings like "over 100 applicants", "29 applicants", etc.
+          const str = String(raw).toLowerCase();
+          if (str.includes('over')) return 100; // "over 100 applicants" → 100
+          const match = str.match(/(\d+)/);
+          return match ? parseInt(match[1], 10) : null;
+        })(),
         posted_at: postedAt.toISOString(),
         posted_at_text: job.posted_time || job.posted_at_text || null,
         expires_at: expiresAt.toISOString(),
