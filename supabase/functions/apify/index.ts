@@ -483,6 +483,36 @@ serve(async (req) => {
             console.log(`[Search] Found ${totalCount} jobs from cache via search term`);
           }
 
+          // Step 2b: If no linked search term found, try direct DB filter by job_title
+          // This allows reusing jobs fetched for other location combinations
+          if (!searchTermId || totalCount === 0) {
+            console.log(`[Search] No linked term, trying direct DB filter for keyword: "${normalizedKeywords}"`);
+            statsMode = 'direct';
+
+            let directQuery = supabase
+              .from('jobs')
+              .select('*', { count: 'exact' })
+              .gt('expires_at', nowIso)
+              .ilike('job_title', `%${normalizedKeywords}%`);
+
+            directQuery = applyWorkTypeFilter(directQuery, remote);
+            directQuery = applyExperienceFilter(directQuery, experienceLevel);
+
+            if (hasLocation) {
+              directQuery = directQuery.ilike('location', `%${normalizedLocation}%`);
+            }
+
+            const { data: directRows, count: directCount } = await directQuery
+              .order('posted_at', { ascending: false })
+              .range(startIndex, endIndex);
+
+            if ((directCount || 0) >= MIN_PAGE_SIZE) {
+              jobsPage = directRows || [];
+              totalCount = directCount || 0;
+              console.log(`[Search] Found ${totalCount} jobs from direct DB filter`);
+            }
+          }
+
           // Step 3: If no results OR less than a page, go to API
           if (totalCount < MIN_PAGE_SIZE && page === 1 && !forceRefresh) {
             console.log(`[Search] Not enough results (${totalCount}), fetching from API`);
