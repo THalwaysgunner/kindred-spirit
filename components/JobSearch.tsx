@@ -312,12 +312,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     });
   }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
-  // Stats calculations
+  // Stats calculations - based on filtered results (what user sees in table)
   const stats = useMemo(() => {
-    const total = results.length;
-    const remote = results.filter(j => j.work_type?.toLowerCase().includes('remote')).length;
-    const easyApply = results.filter(j => j.is_easy_apply).length;
-    const recent = results.filter(j => j.posted_at?.toLowerCase().includes('hour') || j.posted_at?.toLowerCase().includes('minute')).length;
+    const total = filteredResults.length;
+    const remote = filteredResults.filter(j => j.work_type?.toLowerCase().includes('remote')).length;
+    const easyApply = filteredResults.filter(j => j.is_easy_apply).length;
+    const recent = filteredResults.filter(j => j.posted_at?.toLowerCase().includes('hour') || j.posted_at?.toLowerCase().includes('minute')).length;
 
     return [
       { label: 'Total Results', value: total, growth: '', trend: 'up' },
@@ -325,7 +325,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [results]);
+  }, [filteredResults]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
