@@ -69,6 +69,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [fromCache, setFromCache] = useState(false);
+  const [serverStats, setServerStats] = useState<{ total: number; remote: number; easyApply: number; recent: number } | null>(null);
   const pageSize = 20;
 
   const [filters, setFilters] = useState<SearchFilters>({
@@ -156,7 +157,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     return found?.label ?? options[0]?.label ?? '';
   };
 
-  const handleSearch = async (page: number = 1, forceRefresh: boolean = false) => {
+  const handleSearch = async (page: number = 1, forceRefresh: boolean = false, cacheOnly: boolean = false) => {
     if (!filters.keywords && !filters.location) return;
 
     setLoading(true);
@@ -183,7 +184,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
         easy_apply: '', // Never filter by easy_apply at API level - client-side only
         page,
         pageSize,
-        forceRefresh
+        forceRefresh,
+        cacheOnly,
+        clientFilters: {
+          workTypes: selectedWorkTypes,
+          experiences: selectedExperiences,
+          datePosted: selectedDatePosted,
+          easyApply: easyApplyFilter,
+        }
       };
 
       console.log('[JobSearch] Sending to API:', searchParams);
@@ -195,6 +203,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       setTotalPages(response.totalPages);
       setCurrentPage(response.page);
       setFromCache(response.fromCache);
+      setServerStats(response.stats || null);
     } catch (err) {
       setError("Failed to fetch jobs. Please try different keywords or try again later.");
       console.error(err);
@@ -202,6 +211,16 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       setLoading(false);
     }
   };
+
+  // When filters change, refresh from DB cache (no external fetch)
+  useEffect(() => {
+    if (!filters.keywords && !filters.location) return;
+    const t = setTimeout(() => {
+      handleSearch(1, false, true);
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
@@ -312,14 +331,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
     });
   }, [results, selectedWorkTypes, selectedExperiences, selectedDatePosted, easyApplyFilter]);
 
-  // Stats calculations
-  // - Total Results should reflect ALL results for the current search (not just current page)
-  // - Other stats reflect what's currently loaded/filtered in the table
+  // Stats calculations - reflect FULL filtered dataset (provided by backend)
   const stats = useMemo(() => {
-    const total = totalCount || filteredResults.length;
-    const remote = filteredResults.filter(j => j.work_type?.toLowerCase().includes('remote')).length;
-    const easyApply = filteredResults.filter(j => j.is_easy_apply).length;
-    const recent = filteredResults.filter(j => j.posted_at?.toLowerCase().includes('hour') || j.posted_at?.toLowerCase().includes('minute')).length;
+    const total = serverStats?.total ?? totalCount;
+    const remote = serverStats?.remote ?? 0;
+    const easyApply = serverStats?.easyApply ?? 0;
+    const recent = serverStats?.recent ?? 0;
 
     return [
       { label: 'Total Results', value: total, growth: '', trend: 'up' },
@@ -327,7 +344,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
       { label: 'Easy Apply', value: easyApply, growth: '', trend: 'up' },
       { label: 'Posted Today', value: recent, growth: '', trend: 'up' },
     ];
-  }, [filteredResults, totalCount]);
+  }, [serverStats, totalCount]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -894,7 +911,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onAnalyzeJob }) => {
           )}
 
           {/* Pagination Controls */}
-          {totalCount > 0 && (
+          {totalPages > 1 && totalCount > 0 && (
             <div className="flex items-center justify-between px-8 py-4 border-t border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <span>
