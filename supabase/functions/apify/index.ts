@@ -475,42 +475,18 @@ serve(async (req) => {
           return q;
         }
 
-        async function computeStatsForJobsTable(baseBuilder: () => any) {
-          const base = baseBuilder;
+        async function computeStatsForJobs(jobIds: string[]) {
+          if (jobIds.length === 0) {
+            return { total: 0, remote: 0, easyApply: 0, recent: 0 };
+          }
 
-          const totalQ = base().select('id', { count: 'exact', head: true });
-          const remoteQ = applyAllClientFilters(base(), '').or('work_type.ilike.%remote%').select('id', { count: 'exact', head: true });
-          const easyQ = applyAllClientFilters(base(), '').eq('is_easy_apply', true).select('id', { count: 'exact', head: true });
-          const recentQ = applyAllClientFilters(base(), '').gte('posted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).select('id', { count: 'exact', head: true });
-
-          const [totalRes, remoteRes, easyRes, recentRes] = await Promise.all([
-            totalQ,
-            remoteQ,
-            easyQ,
-            recentQ,
-          ]);
-
-          return {
-            total: totalRes.count || 0,
-            remote: remoteRes.count || 0,
-            easyApply: easyRes.count || 0,
-            recent: recentRes.count || 0,
-          };
-        }
-
-        async function computeStatsForLinksTable(baseBuilder: () => any) {
-          const base = baseBuilder;
-
-          const totalQ = base().select('job_id', { count: 'exact', head: true });
-          const remoteQ = applyAllClientFilters(base(), 'jobs.').or('jobs.work_type.ilike.%remote%').select('job_id', { count: 'exact', head: true });
-          const easyQ = applyAllClientFilters(base(), 'jobs.').eq('jobs.is_easy_apply', true).select('job_id', { count: 'exact', head: true });
-          const recentQ = applyAllClientFilters(base(), 'jobs.').gte('jobs.posted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).select('job_id', { count: 'exact', head: true });
+          const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
           const [totalRes, remoteRes, easyRes, recentRes] = await Promise.all([
-            totalQ,
-            remoteQ,
-            easyQ,
-            recentQ,
+            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds),
+            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).ilike('work_type', '%remote%'),
+            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).eq('is_easy_apply', true),
+            supabase.from('jobs').select('id', { count: 'exact', head: true }).in('id', jobIds).gte('posted_at', recentCutoff),
           ]);
 
           return {
@@ -537,6 +513,7 @@ serve(async (req) => {
           const baseBuilder = () => {
             let q = supabase
               .from('jobs')
+              .select('*', { count: 'exact' })
               .gt('expires_at', nowIso);
 
             if (hasLocation && !hasKeywords) {
@@ -557,7 +534,6 @@ serve(async (req) => {
           };
 
           const pageQuery = baseBuilder()
-            .select('*', { count: 'exact' })
             .order('posted_at', { ascending: false })
             .range(startIndex, endIndex);
 
@@ -568,7 +544,12 @@ serve(async (req) => {
 
           jobsPage = rows || [];
           totalCount = count || 0;
-          stats = await computeStatsForJobsTable(baseBuilder);
+          
+          // Compute stats from the full filtered result (use IDs from a separate query)
+          const allIdsQuery = baseBuilder().select('id').limit(1000);
+          const { data: allIdsData } = await allIdsQuery;
+          const allIds = (allIdsData || []).map((r: any) => r.id);
+          stats = await computeStatsForJobs(allIds);
           fromCache = true;
         } else {
           // Specific search (keywords + location)
@@ -617,39 +598,39 @@ serve(async (req) => {
             }
           }
 
-          const baseLinksBuilder = () => {
-            let q = supabase
-              .from('job_search_links')
-              .eq('search_term_id', canonicalSearchTermId)
-              .gt('jobs.expires_at', nowIso);
+          // Query jobs via the links table with proper join
+          let jobQuery = supabase
+            .from('jobs')
+            .select('*, job_search_links!inner(search_term_id)', { count: 'exact' })
+            .eq('job_search_links.search_term_id', canonicalSearchTermId)
+            .gt('expires_at', nowIso);
 
-            // join + base filter
-            q = q.select('job_id, jobs!inner(*)', { count: 'exact' });
-            q = applyAllClientFilters(q, 'jobs.');
-            return q;
-          };
+          jobQuery = applyAllClientFilters(jobQuery, '');
 
-          const pageQuery = baseLinksBuilder()
-            .order('posted_at', { foreignTable: 'jobs', ascending: false })
+          const pageQuery = jobQuery
+            .order('posted_at', { ascending: false })
             .range(startIndex, endIndex);
 
-          const { data: linkRows, error: qErr, count } = await pageQuery;
+          const { data: jobRows, error: qErr, count } = await pageQuery;
           if (qErr) {
             console.error('[Search] Specific query error:', qErr);
           }
 
-          jobsPage = (linkRows || []).map((r: any) => r.jobs).filter(Boolean);
+          jobsPage = jobRows || [];
           totalCount = count || 0;
-          stats = await computeStatsForLinksTable(() => {
-            // For stats we need the same join and filters, but HEAD-only
-            let q = supabase
-              .from('job_search_links')
-              .eq('search_term_id', canonicalSearchTermId)
-              .gt('jobs.expires_at', nowIso)
-              .select('job_id, jobs!inner(id)', { count: 'exact' });
-            q = applyAllClientFilters(q, 'jobs.');
-            return q;
-          });
+
+          // Get all job IDs for stats (up to 1000)
+          const allIdsQuery = supabase
+            .from('jobs')
+            .select('id, job_search_links!inner(search_term_id)')
+            .eq('job_search_links.search_term_id', canonicalSearchTermId)
+            .gt('expires_at', nowIso)
+            .limit(1000);
+
+          const allIdsFiltered = applyAllClientFilters(allIdsQuery, '');
+          const { data: allIdsData } = await allIdsFiltered;
+          const allIds = (allIdsData || []).map((r: any) => r.id);
+          stats = await computeStatsForJobs(allIds);
         }
 
         // Transform jobs to match expected front-end format
