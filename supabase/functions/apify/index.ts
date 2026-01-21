@@ -205,7 +205,30 @@ async function storeJobs(supabase: any, jobs: any[], searchTermId: string): Prom
   for (const job of jobs) {
     if (!job.job_url) continue;
 
-    const postedAt = parsePostedDate(job.posted_time || job.posted_at_text || '');
+    // Prefer absolute timestamps from the provider payload when available.
+    // Fall back to parsing relative strings (e.g. "2 days ago").
+    const postedAt = (() => {
+      const epoch = Number(job.posted_at_epoch ?? job.postedAtEpoch ?? job.posted_epoch);
+      if (!Number.isNaN(epoch) && epoch > 0) {
+        // Some payloads provide ms, others seconds
+        return new Date(epoch > 1_000_000_000_000 ? epoch : epoch * 1000);
+      }
+
+      const raw = (job.posted_at ?? job.postedAt ?? job.posted_time ?? job.posted_at_text ?? '').toString();
+      if (raw) {
+        // Common non-ISO format: "YYYY-MM-DD HH:MM:SS"
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
+          const d = new Date(raw.replace(' ', 'T') + 'Z');
+          if (!Number.isNaN(d.getTime())) return d;
+        }
+
+        const d = new Date(raw);
+        if (!Number.isNaN(d.getTime())) return d;
+      }
+
+      return parsePostedDate(job.posted_time || job.posted_at_text || '');
+    })();
+
     const expiresAt = new Date(postedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const { data: upsertedJob, error } = await supabase
@@ -671,22 +694,32 @@ serve(async (req) => {
         }
 
         // Transform jobs to match expected front-end format
-        const transformedJobs = (jobsPage || []).map((job: any) => ({
-          ...(job.raw_data || {}),
-          job_url: job.job_url,
-          job_id: job.job_id,
-          job_title: job.job_title,
-          company: job.company,
-          company_url: job.company_url,
-          location: job.location,
-          work_type: job.work_type,
-          salary: job.salary,
-          description: job.description,
-          posted_time: job.posted_at_text,
-          posted_at: job.posted_at,
-          is_easy_apply: job.is_easy_apply,
-          applicant_count: job.applicant_count,
-        }));
+        const transformedJobs = (jobsPage || []).map((job: any) => {
+          const raw = job.raw_data || {};
+
+          // Ensure the frontend sees the actual job posted timestamp (not the DB upsert time).
+          const rawEpoch = Number(raw.posted_at_epoch ?? raw.postedAtEpoch ?? raw.posted_epoch);
+          const postedAtIso = (!Number.isNaN(rawEpoch) && rawEpoch > 0)
+            ? new Date(rawEpoch > 1_000_000_000_000 ? rawEpoch : rawEpoch * 1000).toISOString()
+            : (job.posted_at || raw.posted_at || null);
+
+          return {
+            ...raw,
+            job_url: job.job_url,
+            job_id: job.job_id,
+            job_title: job.job_title,
+            company: job.company,
+            company_url: job.company_url,
+            location: job.location,
+            work_type: job.work_type,
+            salary: job.salary,
+            description: job.description,
+            posted_time: job.posted_at_text,
+            posted_at: postedAtIso,
+            is_easy_apply: job.is_easy_apply,
+            applicant_count: job.applicant_count,
+          };
+        });
 
         // Stats must reflect the FULL dataset for the Row 2 query (not just the current page)
         const recentCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -699,7 +732,21 @@ serve(async (req) => {
           remoteCount = statsFallbackJobs.filter((j: any) => (j.work_type || j.remote || '').toLowerCase().includes('remote')).length;
           easyApplyCount = statsFallbackJobs.filter((j: any) => j.is_easy_apply || j.easy_apply).length;
           recentCount = statsFallbackJobs.filter((j: any) => {
-            const dt = parsePostedDate(j.posted_time || j.posted_at_text || '');
+            const epoch = Number(j.posted_at_epoch ?? j.postedAtEpoch ?? j.posted_epoch);
+            const dt = (!Number.isNaN(epoch) && epoch > 0)
+              ? new Date(epoch > 1_000_000_000_000 ? epoch : epoch * 1000)
+              : (() => {
+                  const raw = (j.posted_at ?? j.postedAt ?? j.posted_time ?? j.posted_at_text ?? '').toString();
+                  if (raw) {
+                    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
+                      const d = new Date(raw.replace(' ', 'T') + 'Z');
+                      if (!Number.isNaN(d.getTime())) return d;
+                    }
+                    const d = new Date(raw);
+                    if (!Number.isNaN(d.getTime())) return d;
+                  }
+                  return parsePostedDate(j.posted_time || j.posted_at_text || '');
+                })();
             return dt.toISOString() >= recentCutoffIso;
           }).length;
         } else {
