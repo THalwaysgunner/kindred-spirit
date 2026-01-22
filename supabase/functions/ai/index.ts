@@ -21,17 +21,17 @@ serve(async (req) => {
     }
 
     const { action, jobText, jobUrl, rawData, profile, job, base64Data, mimeType, source } = await req.json();
-    
+
     let systemPrompt = "";
     let userPrompt = "";
 
     switch (action) {
       case 'analyzeJob': {
         systemPrompt = "You are an intelligent recruiter assistant. Analyze job descriptions and extract key requirements.";
-        userPrompt = jobUrl 
+        userPrompt = jobUrl
           ? `Access the following Job URL: ${jobUrl}\nExtract the Job Title, Company Name, Location, and Posting Date. Summarize the description and extract key skills.`
           : `Analyze this job description and extract key requirements:\n\n${jobText}`;
-        
+
         userPrompt += `\n\nOutput ONLY valid JSON with this structure:
         {
           "title": "Job Title",
@@ -121,7 +121,33 @@ serve(async (req) => {
         RAW DATA:
         ${jsonString}
         
-        Output JSON with: name, email, phone, linkedinUrl, profilePictureUrl, currentRole, summary, skills[], experience[], education[]`;
+        Output JSON with this exact structure:
+        {
+          "name": "Full Name",
+          "email": "email",
+          "phone": "phone",
+          "linkedinUrl": "url",
+          "profilePictureUrl": "url",
+          "currentRole": "Headline",
+          "summary": "About text",
+          "skills": [{ "name": "Skill" }],
+          "experience": [{
+            "company": "Company Name",
+            "role": "Job Title",
+            "dates": "Jan 2020 - Present",
+            "duration": "4 yrs",
+            "location": "City, Country",
+            "description": "Responsibilities",
+            "logo": "Company Logo URL"
+          }],
+          "education": [{
+            "institution": "School Name",
+            "degree": "Degree Name",
+            "fieldOfStudy": "Major",
+            "year": "2016 - 2020",
+            "logo": "School Logo URL"
+          }]
+        }`;
         break;
       }
 

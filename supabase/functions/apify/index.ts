@@ -21,32 +21,32 @@ const MIN_PAGE_SIZE = 20; // Minimum jobs needed, otherwise go to API
 function parsePostedDate(postedText: string): Date {
   const now = new Date();
   if (!postedText) return now;
-  
+
   const text = postedText.toLowerCase();
-  
+
   const hoursMatch = text.match(/(\d+)\s*hours?\s*ago/);
   if (hoursMatch) {
     return new Date(now.getTime() - parseInt(hoursMatch[1]) * 60 * 60 * 1000);
   }
-  
+
   const daysMatch = text.match(/(\d+)\s*days?\s*ago/);
   if (daysMatch) {
     return new Date(now.getTime() - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000);
   }
-  
+
   const weeksMatch = text.match(/(\d+)\s*weeks?\s*ago/);
   if (weeksMatch) {
     return new Date(now.getTime() - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000);
   }
-  
+
   const monthsMatch = text.match(/(\d+)\s*months?\s*ago/);
   if (monthsMatch) {
     return new Date(now.getTime() - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000);
   }
-  
+
   if (text.includes('just now') || text.includes('today')) return now;
   if (text.includes('yesterday')) return new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  
+
   return now;
 }
 
@@ -54,7 +54,7 @@ async function runActor(actorId: string, inputPayload: any, apiToken: string, re
   const startUrl = `https://api.apify.com/v2/acts/${actorId}/runs?token=${apiToken}`;
 
   console.log(`[Apify] Starting actor: ${actorId}`);
-  
+
   const startRes = await fetch(startUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -294,7 +294,7 @@ async function getOrCreateSearchTerm(
   filters: any
 ): Promise<string | null> {
   const normalizedLoc = normalizeText(location);
-  
+
   // Try to find existing term
   const { data: existing } = await supabase
     .from('search_terms')
@@ -313,7 +313,7 @@ async function getOrCreateSearchTerm(
     const nextCount = (existing.search_count || 0) + 1;
     await supabase
       .from('search_terms')
-      .update({ 
+      .update({
         search_count: nextCount,
         last_searched_at: new Date().toISOString()
       })
@@ -359,7 +359,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { action, jobInput, inputType, params, profileUrl } = await req.json();
-    
+
     let result;
 
     switch (action) {
@@ -496,9 +496,9 @@ serve(async (req) => {
 
             // Create or get search term for storing results
             const newTermId = await getOrCreateSearchTerm(
-              supabase, 
-              normalizedKeywords, 
-              canonicalKeywords, 
+              supabase,
+              normalizedKeywords,
+              canonicalKeywords,
               hasLocation ? normalizedLocation : '',
               filters
             );
@@ -752,17 +752,17 @@ serve(async (req) => {
             const dt = (!Number.isNaN(epoch) && epoch > 0)
               ? new Date(epoch > 1_000_000_000_000 ? epoch : epoch * 1000)
               : (() => {
-                  const raw = (j.posted_at ?? j.postedAt ?? j.posted_time ?? j.posted_at_text ?? '').toString();
-                  if (raw) {
-                    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
-                      const d = new Date(raw.replace(' ', 'T') + 'Z');
-                      if (!Number.isNaN(d.getTime())) return d;
-                    }
-                    const d = new Date(raw);
+                const raw = (j.posted_at ?? j.postedAt ?? j.posted_time ?? j.posted_at_text ?? '').toString();
+                if (raw) {
+                  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
+                    const d = new Date(raw.replace(' ', 'T') + 'Z');
                     if (!Number.isNaN(d.getTime())) return d;
                   }
-                  return parsePostedDate(j.posted_time || j.posted_at_text || '');
-                })();
+                  const d = new Date(raw);
+                  if (!Number.isNaN(d.getTime())) return d;
+                }
+                return parsePostedDate(j.posted_time || j.posted_at_text || '');
+              })();
             return dt.toISOString() >= recentCutoffIso;
           }).length;
         } else {
@@ -821,10 +821,26 @@ serve(async (req) => {
       }
 
       case 'fetchLinkedInProfile': {
+        const cleanUrl = profileUrl.trim().replace(/\/$/, "");
+
+        // Extract username from various LinkedIn URL formats
+        const usernameMatch =
+          cleanUrl.match(/linkedin\.com\/in\/([^\/\?#]+)/) ||
+          cleanUrl.match(/linkedin\.com\/mwlite\/in\/([^\/\?#]+)/) ||
+          cleanUrl.match(/linkedin\.com\/profile\/view\?id=([^\/&]+)/);
+
+        const username = usernameMatch ? usernameMatch[1] : cleanUrl;
+
+        console.log(`[Apify] Fetching LinkedIn profile. URL: ${cleanUrl}, Extracted Username: ${username}`);
+
+        // Try multiple common input keys for apimaestro actors
         const inputPayload = {
-          username: profileUrl,
+          usernames: [username],
+          profileUrls: [cleanUrl],
+          username: username,
           includeEmail: true
         };
+
         const items = await runActor(ACTOR_LINKEDIN_PROFILE, inputPayload, apiToken, true);
         result = Array.isArray(items) && items.length > 0 ? items[0] : null;
         break;

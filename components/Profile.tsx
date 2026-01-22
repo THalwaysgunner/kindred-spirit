@@ -376,22 +376,33 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
 
     try {
       const rawData = await ApifyService.fetchLinkedInProfile(profile.linkedinUrl);
+      console.log('--- DEBUG: RAW API DATA FROM APIFY ---');
+      console.log(JSON.stringify(rawData, null, 2));
+
       if (!rawData) throw new Error("Could not fetch LinkedIn data");
 
       setLoadingMessage('Processing profile...');
-      
+
       // Use deterministic mapper first for structural data (logos, years, etc.)
       const deterministicProfile = mapLinkedInToProfile(rawData, profile);
-      
+
       // Then use AI for text normalization only (summary polish, etc.)
       let aiEnhancedProfile = deterministicProfile;
       try {
         const aiMapped = await GeminiService.mapProfileData(rawData, 'LinkedIn');
-        // Only use AI for summary and text fields, keep structural data from deterministic mapper
+        // Merge AI results but only overwrite if the AI actually found content
         aiEnhancedProfile = {
           ...deterministicProfile,
+          name: aiMapped.name || deterministicProfile.name,
+          currentRole: aiMapped.currentRole || deterministicProfile.currentRole,
           summary: aiMapped.summary || deterministicProfile.summary,
-          currentRole: aiMapped.currentRole || deterministicProfile.currentRole
+          email: aiMapped.email || deterministicProfile.email,
+          phone: aiMapped.phone || deterministicProfile.phone,
+          profilePictureUrl: deterministicProfile.profilePictureUrl || aiMapped.profilePictureUrl,
+          // ALWAYS use deterministic mapper for arrays - it has correct field names from API
+          skills: deterministicProfile.skills?.length ? deterministicProfile.skills : aiMapped.skills,
+          experience: deterministicProfile.experience,
+          education: deterministicProfile.education
         };
       } catch (aiErr) {
         console.warn('AI mapping failed, using deterministic mapping only:', aiErr);
@@ -400,7 +411,21 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
       // Normalize to ensure all fields are properly shaped
       const finalProfile = normalizeProfile(aiEnhancedProfile);
 
+      console.log('--- DEBUG: FINAL MAPPED PROFILE (ABOUT TO BE SET) ---');
+      console.log(JSON.stringify(finalProfile, null, 2));
+
+      // CRITICAL: Update the parent and then sync internal component state
       onChange(finalProfile);
+
+      setTempPersonal({
+        name: finalProfile.name,
+        currentRole: finalProfile.currentRole,
+        email: finalProfile.email,
+        phone: finalProfile.phone
+      });
+      setTempSkills(finalProfile.skills);
+      setTempSummary(finalProfile.summary || '');
+
       setHasUnsavedChanges(true);
       toast.success('LinkedIn profile imported! Click "Save Changes" to persist.');
     } catch (err: any) {
@@ -421,7 +446,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
     try {
       // Normalize profile before saving
       const normalizedProfile = normalizeProfile(profile);
-      
+
       // 1. Save Basic Profile Info
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: session.user.id,
@@ -436,33 +461,19 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
 
       if (profileError) throw profileError;
 
-      // 2. Sync Skills to skills table
-      const { data: existingSkills } = await supabase
-        .from('skills')
-        .select('id, name')
-        .eq('profile_id', session.user.id);
-
-      const existingNames = new Set((existingSkills || []).map(s => s.name));
-      const newNames = new Set(normalizedProfile.skills.map(s => s.name));
-
-      // Delete removed skills
-      const toDelete = (existingSkills || []).filter(s => !newNames.has(s.name));
-      for (const skill of toDelete) {
-        await supabase.from('skills').delete().eq('id', skill.id);
-      }
-
-      // Insert new skills
-      const toInsert = normalizedProfile.skills.filter(s => !existingNames.has(s.name));
-      for (const skill of toInsert) {
+      // 2. REPLACE ALL Skills - Delete all existing, then insert all new
+      await supabase.from('skills').delete().eq('profile_id', session.user.id);
+      for (const skill of normalizedProfile.skills) {
         await supabase.from('skills').insert({
           profile_id: session.user.id,
           name: skill.name
         });
       }
 
-      // 2. Upsert Experience with proper logo handling
+      // 3. REPLACE ALL Experience - Delete all existing, then insert all new
+      await supabase.from('experience').delete().eq('profile_id', session.user.id);
       for (const exp of normalizedProfile.experience) {
-        const payload = {
+        const { data } = await supabase.from('experience').insert({
           profile_id: session.user.id,
           company: exp.company || 'Unknown Company',
           role: exp.role || 'Professional',
@@ -471,38 +482,27 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
           location: exp.location || '',
           description: exp.description || '',
           logo_url: exp.logo || ''
-        };
-        
-        if (isUuid(exp.id)) {
-          await supabase.from('experience').update(payload).eq('id', exp.id);
-        } else {
-          const { data } = await supabase.from('experience').insert(payload).select().single();
-          if (data) exp.id = data.id;
-        }
+        }).select().single();
+        if (data) exp.id = data.id;
       }
 
-      // 3. Upsert Education with proper logo and year handling
+      // 4. REPLACE ALL Education - Delete all existing, then insert all new
+      await supabase.from('education').delete().eq('profile_id', session.user.id);
       for (const edu of normalizedProfile.education) {
-        const payload = {
+        const { data } = await supabase.from('education').insert({
           profile_id: session.user.id,
           institution: edu.institution || 'Unknown Institution',
           degree: edu.degree || '',
           field_of_study: edu.fieldOfStudy || '',
           year: edu.year || '',
           logo_url: edu.logo || ''
-        };
-        
-        if (isUuid(edu.id)) {
-          await supabase.from('education').update(payload).eq('id', edu.id);
-        } else {
-          const { data } = await supabase.from('education').insert(payload).select().single();
-          if (data) edu.id = data.id;
-        }
+        }).select().single();
+        if (data) edu.id = data.id;
       }
 
       toast.dismiss(loadingToast);
       toast.success('Profile saved successfully!');
-      
+
       // Refetch from database to ensure UI matches DB state
       if (onRefetch) {
         await onRefetch();
@@ -510,7 +510,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
         onChange(normalizedProfile);
         setLastSavedProfile(normalizedProfile);
       }
-      
+
       setHasUnsavedChanges(false);
     } catch (err: any) {
       toast.dismiss(loadingToast);
@@ -741,7 +741,7 @@ export const Profile: React.FC<ProfileProps> = ({ profile, onChange, session, on
             <p className="text-brand-600 dark:text-brand-400 font-medium">
               {profile.currentRole || 'Your Professional Headline'}
             </p>
-            <p className="text-xs text-slate-400 mt-1">Manage your "Source of Truth" for AI generations.</p>
+            <p className="text-xs text-slate-400 mt-1">Manage your Profile CV.</p>
           </div>
         </div>
 

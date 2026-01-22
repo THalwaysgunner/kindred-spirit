@@ -94,21 +94,28 @@ function coalesce(...values: (string | undefined | null)[]): string {
  * Map raw experience item to normalized ExperienceItem
  */
 function mapExperience(raw: ApifyExperience): ExperienceItem {
+  // Parse duration string like "Sep 2025 - Present · 5 mos" into dates and duration
+  const durationStr = raw.duration || '';
+  let dates = '';
+  let duration = '';
+
+  if (durationStr.includes(' · ')) {
+    const parts = durationStr.split(' · ');
+    dates = parts[0] || '';
+    duration = parts[1] || '';
+  } else {
+    dates = durationStr;
+  }
+
   return {
-    company: coalesce(raw.company, raw.company_name, raw.companyName) || 'Company',
-    role: coalesce(raw.title, raw.role) || 'Role',
-    dates: coalesce(raw.dates, raw.date_range, raw.dateRange, raw.duration),
-    duration: coalesce(raw.duration),
-    location: coalesce(raw.location),
-    description: coalesce(raw.description),
-    logo: coalesce(
-      raw.company_logo_url,
-      raw.companyLogoUrl,
-      raw.logo,
-      raw.logo_url,
-      raw.logoUrl
-    ),
-    type: ''
+    company: raw.company || '',
+    role: raw.title || '',
+    dates: dates,
+    duration: duration,
+    location: raw.location || '',
+    description: raw.description || '',
+    logo: raw.company_logo_url || '',
+    type: (raw as any).employment_type || ''
   };
 }
 
@@ -116,21 +123,12 @@ function mapExperience(raw: ApifyExperience): ExperienceItem {
  * Map raw education item to normalized EducationItem
  */
 function mapEducation(raw: ApifyEducation): EducationItem {
-  // Parse year from duration string like "2016 - 2019" or just use year field
-  let yearStr = coalesce(raw.year, raw.years, raw.duration, raw.dates, raw.date_range, raw.dateRange);
-  
   return {
-    institution: coalesce(raw.school, raw.institution, raw.school_name, raw.schoolName) || 'Institution',
-    degree: coalesce(raw.degree, raw.degree_name, raw.degreeName),
-    fieldOfStudy: coalesce(raw.field_of_study, raw.fieldOfStudy, raw.field),
-    year: yearStr,
-    logo: coalesce(
-      raw.school_logo_url,
-      raw.schoolLogoUrl,
-      raw.logo,
-      raw.logo_url,
-      raw.logoUrl
-    )
+    institution: raw.school || '',
+    degree: raw.degree || '',
+    fieldOfStudy: raw.field_of_study || '',
+    year: raw.duration || '',
+    logo: raw.school_logo_url || ''
   };
 }
 
@@ -139,7 +137,7 @@ function mapEducation(raw: ApifyEducation): EducationItem {
  */
 function parseSkills(rawSkills: any[]): { name: string }[] {
   if (!rawSkills || !Array.isArray(rawSkills)) return [];
-  
+
   return rawSkills.map(skill => {
     if (typeof skill === 'string') {
       return { name: skill };
@@ -156,44 +154,33 @@ function parseSkills(rawSkills: any[]): { name: string }[] {
  * This normalizes ALL possible field name variants from Apify/LinkedIn scraping
  */
 export function mapLinkedInToProfile(rawData: ApifyRawProfile, existingProfile?: Partial<UserProfile>): UserProfile {
-  const experiences = (rawData.experience || rawData.positions || []).map(mapExperience);
-  const educations = (rawData.education || rawData.schools || []).map(mapEducation);
-  const skills = parseSkills(rawData.skills || []);
-  
-  // Build full name from parts if needed
-  const fullName = coalesce(
-    rawData.fullName,
-    rawData.full_name,
-    rawData.name,
-    rawData.firstName && rawData.lastName ? `${rawData.firstName} ${rawData.lastName}` : undefined
-  );
-  
+  // Get basic_info object from API response
+  const basicInfo = (rawData as any).basic_info || {};
+
+  // Map experience array
+  const experiences = (rawData.experience || []).map(mapExperience);
+
+  // Map education array
+  const educations = (rawData.education || []).map(mapEducation);
+
+  // Map skills from basic_info.top_skills array (array of strings)
+  const topSkills = basicInfo.top_skills || [];
+  const skills = topSkills.map((skill: string) => ({ name: skill }));
+
+  // Build full name - API uses basic_info.fullname
+  const fullName = basicInfo.fullname || '';
+
   return {
-    name: fullName || existingProfile?.name || '',
-    currentRole: coalesce(
-      rawData.headline,
-      rawData.headlineRole,
-      rawData.current_role,
-      rawData.currentRole
-    ) || existingProfile?.currentRole || '',
-    summary: coalesce(rawData.summary, rawData.about, rawData.bio) || existingProfile?.summary || '',
-    email: existingProfile?.email || coalesce(rawData.email) || '', // Prefer existing email
-    phone: existingProfile?.phone || coalesce(rawData.phone) || '',
-    linkedinUrl: coalesce(
-      rawData.linkedinUrl,
-      rawData.linkedin_url,
-      rawData.publicIdentifier ? `https://linkedin.com/in/${rawData.publicIdentifier}` : undefined
-    ) || existingProfile?.linkedinUrl || '',
-    profilePictureUrl: coalesce(
-      rawData.profilePicture,
-      rawData.profilePictureUrl,
-      rawData.profile_picture_url,
-      rawData.avatar,
-      rawData.avatarUrl
-    ) || existingProfile?.profilePictureUrl || '',
-    skills: skills.length > 0 ? skills : (existingProfile?.skills || []),
-    experience: experiences.length > 0 ? experiences : (existingProfile?.experience || []),
-    education: educations.length > 0 ? educations : (existingProfile?.education || []),
+    name: fullName,
+    currentRole: basicInfo.headline || '',
+    summary: basicInfo.about || '',
+    email: basicInfo.email || '',
+    phone: '',
+    linkedinUrl: basicInfo.profile_url || '',
+    profilePictureUrl: basicInfo.profile_picture_url || '',
+    skills: skills,
+    experience: experiences,
+    education: educations,
     isVerified: true
   };
 }
@@ -212,27 +199,27 @@ export function normalizeProfile(profile: UserProfile): UserProfile {
     phone: profile.phone || '',
     linkedinUrl: profile.linkedinUrl || '',
     profilePictureUrl: profile.profilePictureUrl || '',
-    skills: (profile.skills || []).map(s => 
+    skills: (profile.skills || []).map(s =>
       typeof s === 'string' ? { name: s } : { name: s.name || '' }
     ).filter(s => s.name),
     experience: (profile.experience || []).map(exp => ({
       ...exp,
-      company: exp.company || 'Company',
-      role: exp.role || 'Role',
+      company: exp.company || '',
+      role: exp.role || (exp as any).title || '',
       dates: exp.dates || '',
       duration: exp.duration || '',
       location: exp.location || '',
       description: exp.description || '',
-      logo: (exp as any).logo || (exp as any).company_logo_url || (exp as any).companyLogoUrl || (exp as any).logo_url || '',
-      type: exp.type || ''
+      logo: exp.logo || (exp as any).company_logo_url || (exp as any).companyLogoUrl || '',
+      type: exp.type || (exp as any).employment_type || ''
     })),
     education: (profile.education || []).map(edu => ({
       ...edu,
-      institution: edu.institution || (edu as any).school || 'Institution',
+      institution: edu.institution || (edu as any).school || '',
       degree: edu.degree || '',
       fieldOfStudy: edu.fieldOfStudy || (edu as any).field_of_study || '',
-      year: edu.year || (edu as any).duration || (edu as any).dates || '',
-      logo: (edu as any).logo || (edu as any).school_logo_url || (edu as any).schoolLogoUrl || (edu as any).logo_url || ''
+      year: edu.year || (edu as any).duration || '',
+      logo: edu.logo || (edu as any).school_logo_url || (edu as any).schoolLogoUrl || ''
     }))
   };
 }
