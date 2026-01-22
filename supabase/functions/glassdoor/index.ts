@@ -27,7 +27,7 @@ serve(async (req) => {
     };
 
     const { action, query, companyId, page, keyword, jobTitle, location, category } = await req.json();
-    
+
     let result;
 
     switch (action) {
@@ -63,9 +63,7 @@ serve(async (req) => {
 
       case 'getInterviews': {
         const fetchPage = async (p: number) => {
-          let url = `${BASE_URL}/company-interviews?company_id=${companyId}&page=${p}&sort=POPULAR&domain=www.glassdoor.com`;
-          if (jobTitle && jobTitle.length > 2) url += `&job_title=${encodeURIComponent(jobTitle)}`;
-          if (location && location.length > 2) url += `&location=${encodeURIComponent(location)}`;
+          const url = `${BASE_URL}/company-interviews?company_id=${companyId}&page=${p}&sort=POPULAR&job_function=${encodeURIComponent(jobTitle || '')}&location_type=ANY&received_offer_only=false&domain=www.glassdoor.com`;
           const res = await fetch(url, { headers });
           return res.json();
         };

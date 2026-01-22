@@ -37,9 +37,9 @@ export const GlassdoorService = {
     return data;
   },
 
-  async getInterviews(companyId: string, page?: number, jobTitle?: string, location?: string): Promise<any> {
+  async getInterviews(companyId: string, page?: number, jobFunction?: string): Promise<any> {
     const { data, error } = await supabase.functions.invoke('glassdoor', {
-      body: { action: 'getInterviews', companyId, page, jobTitle, location }
+      body: { action: 'getInterviews', companyId, page, jobTitle: jobFunction }
     });
     if (error) throw error;
     return data;
