@@ -235,6 +235,270 @@ export type Database = {
         }
         Relationships: []
       }
+      company_interviews: {
+        Row: {
+          company_id: string
+          created_at: string
+          difficulty: string | null
+          experience: string | null
+          id: string
+          interview_id: string | null
+          job_title: string | null
+          location: string | null
+          outcome: string | null
+          process_description: string | null
+          questions: Json | null
+          review_datetime: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          difficulty?: string | null
+          experience?: string | null
+          id?: string
+          interview_id?: string | null
+          job_title?: string | null
+          location?: string | null
+          outcome?: string | null
+          process_description?: string | null
+          questions?: Json | null
+          review_datetime?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          difficulty?: string | null
+          experience?: string | null
+          id?: string
+          interview_id?: string | null
+          job_title?: string | null
+          location?: string | null
+          outcome?: string | null
+          process_description?: string | null
+          questions?: Json | null
+          review_datetime?: string | null
+        }
+        Relationships: []
+      }
+      company_overview: {
+        Row: {
+          ceo_rating: number | null
+          company_description: string | null
+          company_id: string
+          company_size: string | null
+          compensation_and_benefits_rating: number | null
+          created_at: string
+          culture_and_values_rating: number | null
+          diversity_and_inclusion_rating: number | null
+          headquarters_location: string | null
+          id: string
+          industry: string | null
+          logo: string | null
+          name: string
+          rating: number | null
+          recommend_to_friend_rating: number | null
+          senior_management_rating: number | null
+          updated_at: string
+          website: string | null
+          work_life_balance_rating: number | null
+        }
+        Insert: {
+          ceo_rating?: number | null
+          company_description?: string | null
+          company_id: string
+          company_size?: string | null
+          compensation_and_benefits_rating?: number | null
+          created_at?: string
+          culture_and_values_rating?: number | null
+          diversity_and_inclusion_rating?: number | null
+          headquarters_location?: string | null
+          id?: string
+          industry?: string | null
+          logo?: string | null
+          name: string
+          rating?: number | null
+          recommend_to_friend_rating?: number | null
+          senior_management_rating?: number | null
+          updated_at?: string
+          website?: string | null
+          work_life_balance_rating?: number | null
+        }
+        Update: {
+          ceo_rating?: number | null
+          company_description?: string | null
+          company_id?: string
+          company_size?: string | null
+          compensation_and_benefits_rating?: number | null
+          created_at?: string
+          culture_and_values_rating?: number | null
+          diversity_and_inclusion_rating?: number | null
+          headquarters_location?: string | null
+          id?: string
+          industry?: string | null
+          logo?: string | null
+          name?: string
+          rating?: number | null
+          recommend_to_friend_rating?: number | null
+          senior_management_rating?: number | null
+          updated_at?: string
+          website?: string | null
+          work_life_balance_rating?: number | null
+        }
+        Relationships: []
+      }
+      company_reviews: {
+        Row: {
+          advice_to_management: string | null
+          business_outlook_rating: number | null
+          career_opportunities_rating: number | null
+          company_id: string
+          compensation_and_benefits_rating: number | null
+          cons: string | null
+          created_at: string
+          culture_and_values_rating: number | null
+          employment_status: string | null
+          id: string
+          job_title: string | null
+          location: string | null
+          pros: string | null
+          rating: number | null
+          recommend_to_friend_rating: number | null
+          review_datetime: string | null
+          review_id: string | null
+          senior_management_rating: number | null
+          summary: string | null
+          work_life_balance_rating: number | null
+          years_of_employment: string | null
+        }
+        Insert: {
+          advice_to_management?: string | null
+          business_outlook_rating?: number | null
+          career_opportunities_rating?: number | null
+          company_id: string
+          compensation_and_benefits_rating?: number | null
+          cons?: string | null
+          created_at?: string
+          culture_and_values_rating?: number | null
+          employment_status?: string | null
+          id?: string
+          job_title?: string | null
+          location?: string | null
+          pros?: string | null
+          rating?: number | null
+          recommend_to_friend_rating?: number | null
+          review_datetime?: string | null
+          review_id?: string | null
+          senior_management_rating?: number | null
+          summary?: string | null
+          work_life_balance_rating?: number | null
+          years_of_employment?: string | null
+        }
+        Update: {
+          advice_to_management?: string | null
+          business_outlook_rating?: number | null
+          career_opportunities_rating?: number | null
+          company_id?: string
+          compensation_and_benefits_rating?: number | null
+          cons?: string | null
+          created_at?: string
+          culture_and_values_rating?: number | null
+          employment_status?: string | null
+          id?: string
+          job_title?: string | null
+          location?: string | null
+          pros?: string | null
+          rating?: number | null
+          recommend_to_friend_rating?: number | null
+          review_datetime?: string | null
+          review_id?: string | null
+          senior_management_rating?: number | null
+          summary?: string | null
+          work_life_balance_rating?: number | null
+          years_of_employment?: string | null
+        }
+        Relationships: []
+      }
+      company_salaries: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          job_title: string | null
+          job_title_id: string | null
+          location: string | null
+          max_additional_pay: number | null
+          max_base_salary: number | null
+          max_cash_bonus: number | null
+          max_salary: number | null
+          max_stock_bonus: number | null
+          median_additional_pay: number | null
+          median_base_salary: number | null
+          median_cash_bonus: number | null
+          median_salary: number | null
+          median_stock_bonus: number | null
+          min_additional_pay: number | null
+          min_base_salary: number | null
+          min_cash_bonus: number | null
+          min_salary: number | null
+          min_stock_bonus: number | null
+          salary_count: number | null
+          salary_currency: string | null
+          salary_period: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          job_title?: string | null
+          job_title_id?: string | null
+          location?: string | null
+          max_additional_pay?: number | null
+          max_base_salary?: number | null
+          max_cash_bonus?: number | null
+          max_salary?: number | null
+          max_stock_bonus?: number | null
+          median_additional_pay?: number | null
+          median_base_salary?: number | null
+          median_cash_bonus?: number | null
+          median_salary?: number | null
+          median_stock_bonus?: number | null
+          min_additional_pay?: number | null
+          min_base_salary?: number | null
+          min_cash_bonus?: number | null
+          min_salary?: number | null
+          min_stock_bonus?: number | null
+          salary_count?: number | null
+          salary_currency?: string | null
+          salary_period?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          job_title?: string | null
+          job_title_id?: string | null
+          location?: string | null
+          max_additional_pay?: number | null
+          max_base_salary?: number | null
+          max_cash_bonus?: number | null
+          max_salary?: number | null
+          max_stock_bonus?: number | null
+          median_additional_pay?: number | null
+          median_base_salary?: number | null
+          median_cash_bonus?: number | null
+          median_salary?: number | null
+          median_stock_bonus?: number | null
+          min_additional_pay?: number | null
+          min_base_salary?: number | null
+          min_cash_bonus?: number | null
+          min_salary?: number | null
+          min_stock_bonus?: number | null
+          salary_count?: number | null
+          salary_currency?: string | null
+          salary_period?: string | null
+        }
+        Relationships: []
+      }
       content_model_reference: {
         Row: {
           description: string | null
